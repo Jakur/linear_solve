@@ -1,0 +1,9 @@
+[package]
+name = "linear_solve"
+version = "0.1.0"
+authors = ["Justin Kur <JustinK97@hotmail.com>"]
+
+[dependencies]
+num-traits = "*"
+num-rational = "0.2"
+ndarray = "0.12.0"
