@@ -24,7 +24,7 @@ impl Tableau {
 
         let mut table = Tableau {
             matrix: Array2::zeros((n, m)),
-            basic_columns: vec![1, 2],
+            basic_columns: vec![0, 0, 0, 1, 1, 1, 1],
         };
         for x in arr.iter().enumerate() {
             for y in x.1.iter().enumerate() {
@@ -33,20 +33,42 @@ impl Tableau {
         }
         table
     }
-    fn pivot(&mut self) {
-        let var = self.choose_var();
+    fn pivot(&mut self) -> bool {
+        let pivot_col = self.choose_var();
+        let mut pivot_row = None;
+        let mut candidate_ratio = Ratio::zero(); //Placeholder until set
         //Find the best ratio of nonbasic columns
         for col in 1..self.matrix.cols() {
-            if !self.basic_columns.contains(&col) {
+            if self.basic_columns[col] == 1 {
                 for (index, val) in self.matrix.column(col).iter().enumerate() {
                     if val.is_integer() && val.numer() == &1 {
-                        let pivot_value = self.matrix[[index, var]];
+                        let pivot_value = self.matrix[[index, pivot_col]];
                         if pivot_value > Ratio::zero() {
                             let ratio = self.matrix[[index, self.matrix.cols()-1]] / pivot_value;
-                            println!("{:?}", ratio);
+                            match pivot_row {
+                                Some(r) => {
+                                    if ratio < candidate_ratio {
+                                        pivot_row = Some(index);
+                                        candidate_ratio = ratio;
+                                    }
+                                }
+                                None => {
+                                    pivot_row = Some(index);
+                                    candidate_ratio = ratio;
+                                }
+                            }
                         }
                     }
                 }
+            }
+        }
+        println!("Candidate ratio: {:?}", candidate_ratio);
+        match pivot_row {
+            Some(r) => {
+                return true //placeholder
+            }
+            None => {
+                return false
             }
         }
     }
@@ -64,7 +86,11 @@ impl Tableau {
 }
 
 fn main() {
-    let mut table = Tableau::new(5, 8);
+    use std::env;
+    let args: Vec<String> = env::args().collect();
+    let n = args[1].parse().unwrap();
+    let m = args[2].parse().unwrap();
+    let mut table = Tableau::new(n, m);
     //println!("{:?}", table.matrix[[0, 0]]);
     table.pivot();
 }
