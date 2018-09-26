@@ -1,50 +1,49 @@
 extern crate num_traits;
 extern crate num_rational;
-extern crate ndarray;
+extern crate nalgebra;
 
 use num_traits::identities::Zero;
 use num_rational::Rational64;
 use num_rational::Ratio;
-use ndarray::Array2;
+use nalgebra::DMatrix;
 
 
 struct Tableau {
-    matrix: Array2<Rational64>,
-    basic_columns: Vec<usize>,
+    matrix: DMatrix<Rational64>,
+    nonbasic_columns: Vec<usize>,
 }
 
 impl Tableau {
     fn new(n: usize, m: usize) -> Tableau {
         //Debug testing array
-        let arr = [[1, -4, -3, 0, 0, 0, 0, 0],
-            [0, 2, 3, 1, 0, 0, 0, 6],
-            [0, -3, 2, 0, 1, 0, 0, 3],
-            [0, 0, 2, 0, 0, 1, 0, 5],
-            [0, 2, 1, 0, 0, 0, 1, 4]];
+        let arr = [1, 0, 0, 0, 0,
+        -4, 2, -3, 0, 2,
+        -3, 3, 2, 2, 1,
+        0, 1, 0, 0, 0,
+        0, 0, 1, 0, 0,
+        0, 0, 0, 1, 0,
+        0, 0, 0, 0, 1,
+        0, 6, 3, 5, 4]; //Column major
 
         let mut table = Tableau {
-            matrix: Array2::zeros((n, m)),
-            basic_columns: vec![0, 0, 0, 1, 1, 1, 1],
+            matrix: DMatrix::from_iterator(n, m, arr.iter()
+                .map(|n| Ratio::from_integer(*n))),
+            nonbasic_columns: vec![1, 2],
         };
-        for x in arr.iter().enumerate() {
-            for y in x.1.iter().enumerate() {
-                table.matrix[[x.0, y.0]] = Ratio::from_integer(*y.1);
-            }
-        }
         table
     }
     fn pivot(&mut self) -> bool {
         let pivot_col = self.choose_var();
         let mut pivot_row = None;
-        let mut candidate_ratio = Ratio::zero(); //Placeholder until set
+        let mut candidate_ratio: Rational64 = Ratio::zero(); //Placeholder until set
         //Find the best ratio of nonbasic columns
-        for col in 1..self.matrix.cols() {
-            if self.basic_columns[col] == 1 {
+        for col in 1..self.matrix.ncols() {
+            if !self.nonbasic_columns.contains(&col) {
                 for (index, val) in self.matrix.column(col).iter().enumerate() {
                     if val.is_integer() && val.numer() == &1 {
-                        let pivot_value = self.matrix[[index, pivot_col]];
+                        let pivot_value = self.matrix[(index, pivot_col)];
                         if pivot_value > Ratio::zero() {
-                            let ratio = self.matrix[[index, self.matrix.cols()-1]] / pivot_value;
+                            let ratio = self.matrix[(index, self.matrix.ncols()-1)] / pivot_value;
                             match pivot_row {
                                 Some(r) => {
                                     if ratio < candidate_ratio {
@@ -62,6 +61,7 @@ impl Tableau {
                 }
             }
         }
+        println!("Pivot row: {} Pivot Column: {}", pivot_row.unwrap(), pivot_col);
         println!("Candidate ratio: {:?}", candidate_ratio);
         match pivot_row {
             Some(r) => {
@@ -74,9 +74,9 @@ impl Tableau {
     }
     ///Choose the nonbasic variable that will have the best effect for optimization
     fn choose_var(&self) -> usize {
-        let mut best_col = self.basic_columns[0];
-        for col in self.basic_columns.iter() {
-            if self.matrix[[0, *col]] < self.matrix[[0, best_col]] {
+        let mut best_col = self.nonbasic_columns[0];
+        for col in self.nonbasic_columns.iter() {
+            if self.matrix[(0, *col)] < self.matrix[(0, best_col)] {
                 best_col = *col;
             }
         }
