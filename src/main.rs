@@ -3,6 +3,7 @@ extern crate num_rational;
 extern crate nalgebra;
 
 use num_traits::identities::Zero;
+use num_traits::identities::One;
 use num_rational::Rational64;
 use num_rational::Ratio;
 use nalgebra::DMatrix;
@@ -25,7 +26,7 @@ impl Tableau {
         0, 0, 0, 0, 1,
         0, 6, 3, 5, 4]; //Column major
 
-        let mut table = Tableau {
+        let table = Tableau {
             matrix: DMatrix::from_iterator(n, m, arr.iter()
                 .map(|n| Ratio::from_integer(*n))),
             nonbasic_columns: vec![1, 2],
@@ -45,7 +46,7 @@ impl Tableau {
                         if pivot_value > Ratio::zero() {
                             let ratio = self.matrix[(index, self.matrix.ncols()-1)] / pivot_value;
                             match pivot_row {
-                                Some(r) => {
+                                Some(_r) => {
                                     if ratio < candidate_ratio {
                                         pivot_row = Some(index);
                                         candidate_ratio = ratio;
@@ -61,11 +62,43 @@ impl Tableau {
                 }
             }
         }
-        println!("Pivot row: {} Pivot Column: {}", pivot_row.unwrap(), pivot_col);
-        println!("Candidate ratio: {:?}", candidate_ratio);
         match pivot_row {
             Some(r) => {
-                return true //placeholder
+                //Set the value of (pivot_row, pivot_col) to 1
+                let value = Ratio::one() / self.matrix[(r, pivot_col)];
+                {
+                    let mut row = self.matrix.row_mut(r);
+                    row *= value;
+                }
+                println!("{}", self.matrix);
+                //Zero out the rest of the pivot_column with row operations using pivot_row
+                let mut col_vec = Vec::new();
+                for (index, col_val) in self.matrix.column(pivot_col).iter().enumerate() {
+                    col_vec.push((index.clone(), col_val.clone()));
+                }
+                let mut row_vec = Vec::new();
+                for value in self.matrix.row(r).iter() {
+                    row_vec.push(value.clone());
+                }
+                for (index, col_val) in col_vec {
+                    if index != r && col_val != Ratio::zero() {
+                        let mut row_copy = DMatrix::from_row_slice(1, self.matrix.ncols(), &row_vec[..]);
+                        let mut row = self.matrix.row_mut(index);
+//                        row.copy_from(&(row + self.matrix.row(r)));
+                        let scaling = Ratio::from_integer(-1) * col_val;
+//                        row.add_to(scaling, self.matrix.row(r), 1);
+                        row_copy *= scaling;
+                        row += row_copy;
+                    }
+                }
+                println!("{}", self.matrix);
+                //Find the nonbasic column we replaced
+                for i in 0..self.nonbasic_columns.len() {
+                    if self.nonbasic_columns[i] == pivot_col {
+                        self.nonbasic_columns[i] = r;
+                    }
+                }
+                return true
             }
             None => {
                 return false
@@ -92,6 +125,6 @@ fn main() {
     let m = args[2].parse().unwrap();
     let mut table = Tableau::new(n, m);
     //println!("{:?}", table.matrix[[0, 0]]);
-    table.pivot();
+    while table.pivot() {}
 }
 
