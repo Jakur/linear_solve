@@ -72,18 +72,15 @@ impl Tableau {
                 }
                 println!("{}", self.matrix);
                 //Zero out the rest of the pivot_column with row operations using pivot_row
-                let mut col_vec = Vec::new();
-                for (index, col_val) in self.matrix.column(pivot_col).iter().enumerate() {
-                    col_vec.push((index.clone(), col_val.clone()));
-                }
                 let mut row_vec = Vec::new();
                 for value in self.matrix.row(r).iter() {
                     row_vec.push(value.clone());
                 }
-                for (index, col_val) in col_vec {
-                    if index != r && col_val != Ratio::zero() {
+                for row_index in 0..self.matrix.nrows() {
+                    let col_val = self.matrix[(row_index, pivot_col)];
+                    if row_index != r && col_val != Ratio::zero() {
                         let mut row_copy = DMatrix::from_row_slice(1, self.matrix.ncols(), &row_vec[..]);
-                        let mut row = self.matrix.row_mut(index);
+                        let mut row = self.matrix.row_mut(row_index);
 //                        row.copy_from(&(row + self.matrix.row(r)));
                         let scaling = Ratio::from_integer(-1) * col_val;
 //                        row.add_to(scaling, self.matrix.row(r), 1);
