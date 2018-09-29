@@ -21,8 +21,8 @@ impl Tableau {
         let table = Tableau {
             matrix: DMatrix::from_iterator(n, m, slice.iter()
                 .map(|n| Ratio::from_integer(*n))),
-            nonbasic_columns: vec![1, 2],
-            real_variables: vec![1, 2],
+            nonbasic_columns: vec![0, 1],
+            real_variables: vec![0, 1],
         };
         table
     }
@@ -35,7 +35,7 @@ impl Tableau {
         let mut pivot_row = None;
         let mut candidate_ratio: Rational64 = Ratio::zero(); //Placeholder until set
         //Find the best ratio of nonbasic columns
-        for col in 1..self.matrix.ncols() {
+        for col in 0..self.matrix.ncols() {
             if true { // !self.nonbasic_columns.contains(&col) { //Todo figure out if this is right
                 //println!("Nonbasics does not contain: {}", col);
                 for (index, val) in self.matrix.column(col).iter().enumerate() {
@@ -104,7 +104,7 @@ impl Tableau {
     ///Choose the nonbasic variable that will have the best effect for optimization
     fn choose_var(&self) -> usize {
         let mut best_col = self.nonbasic_columns[0];
-        for col in 1..self.matrix.ncols() {
+        for col in 0..self.matrix.ncols()-1 {
             if self.matrix[(0, col)] < self.matrix[(0, best_col)] {
                 best_col = col;
             }
@@ -113,7 +113,7 @@ impl Tableau {
     }
 
     fn is_optimal(&self) -> bool {
-        for col in 1..self.matrix.ncols() {
+        for col in 0..self.matrix.ncols()-1 {
             if self.matrix[(0, col)] < Ratio::zero() {
                 return false;
             }
@@ -127,10 +127,9 @@ fn main() {
     use std::env;
     let args: Vec<String> = env::args().collect();
     let n = 5;
-    let m = 8;
+    let m = 7;
     let test1 =
-        [1, 0, 0, 0, 0,
-        -4, 2, -3, 0, 2,
+        [-4, 2, -3, 0, 2,
         -3, 3, 2, 2, 1,
         0, 1, 0, 0, 0,
         0, 0, 1, 0, 0,
@@ -138,8 +137,7 @@ fn main() {
         0, 0, 0, 0, 1,
         0, 6, 3, 5, 4]; //Column major
     let test2 =
-    [1, 0, 0, 0,
-    -1, 2, 4, 2,
+    [-1, 2, 4, 2,
     -2, 1, 2, 5,
     1, 1, 3, 5,
     0, 1, 0, 0,
@@ -147,8 +145,7 @@ fn main() {
     0, 0, 0, 1,
     0, 14, 28, 30];
     let test3 =
-    [1, 0, 0, 0, 0,
-    -1000, 10, 2, 1, 0,
+    [-1000, 10, 2, 1, 0,
     -1200, 5, 3, 0, 1,
     0, 1, 0, 0, 0,
     0, 0, 1, 0, 0,
