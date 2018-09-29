@@ -15,6 +15,34 @@ struct Tableau {
 }
 
 impl Tableau {
+    ///Creates a tableaux from a vector of inequalities in the standard form
+    fn new_standard(vector: Vec<Vec<Rational64>>) -> Tableau {
+        let variables = vector[1].len() - 1;
+        let rows = vector.len(); //constraints + 1
+        let cols = vector.len() + variables; //constraints + 1 + vars
+        let mut matrix = DMatrix::from_element(rows, cols, Ratio::zero());
+        //Init variable columns
+        for i in 0..rows {
+            for j in 0..variables {
+                matrix[(i, j)] = vector[i][j];
+            }
+        }
+        let mut row = 1;
+        //Init slack variables
+        for col in variables..cols-1 {
+            matrix[(row, col)] = Ratio::one();
+            row += 1;
+        }
+        //Init row values
+        for r in 1..rows {
+            matrix[(r, cols-1)] = vector[r][variables];
+        }
+        let real_variables: Vec<_> = (0..variables).collect();
+        Tableau {
+            matrix,
+            real_variables,
+        }
+    }
     fn new(n: usize, m: usize, slice: &[i64]) -> Tableau {
         //Debug testing array
         let table = Tableau {
@@ -106,7 +134,7 @@ impl Tableau {
         }
         return true;
     }
-
+    ///Find and return the optimal values of the true variables
     fn read_solution(&self) -> Vec<Rational64> {
         let mut values = Vec::new();
         for var_column in self.real_variables.iter() {
@@ -162,15 +190,28 @@ fn main() {
     0, 0, 0, 1, 0,
     0, 0, 0, 0, 1,
     0, 200, 60, 34, 14];
-    let mut table = Tableau::new(n, m, &test3);
+
+    //test_string is equivalent to test3
+    let test_string = "1000 1200 0\n10 5 200\n2 3 60\n1 0 34\n0 1 14";
+    let mut test_vec: Vec<Vec<Rational64>> = test_string.lines()
+        .map(|line| line.split_whitespace()
+        .map(|x| x.parse().unwrap()).collect()).collect();
+    //Make first row, i.e. objective function values, negative
+    test_vec[0] = test_vec[0].iter().map(|num| num * -1).collect();
+
+    //let mut table = Tableau::new(n, m, &test3);
+    let mut table = Tableau::new_standard(test_vec);
+
+    println!("Starting Tableau: {}", table.matrix);
 
     while table.pivot() {}
 
     let solution = table.read_solution();
-    println!("Finished Tableaux: {}", table.matrix);
+    println!("Finished Tableau: {}", table.matrix);
     print!("Solution: ");
     for val in solution {
         print!("{} ", val);
     }
+    println!("\nObjective Function Value: {}", table.matrix[(0, table.matrix.ncols() - 1)]);
 }
 
