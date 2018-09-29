@@ -11,7 +11,6 @@ use nalgebra::DMatrix;
 
 struct Tableau {
     matrix: DMatrix<Rational64>,
-    nonbasic_columns: Vec<usize>,
     real_variables: Vec<usize>, //Not slack variables
 }
 
@@ -21,7 +20,6 @@ impl Tableau {
         let table = Tableau {
             matrix: DMatrix::from_iterator(n, m, slice.iter()
                 .map(|n| Ratio::from_integer(*n))),
-            nonbasic_columns: vec![0, 1],
             real_variables: vec![0, 1],
         };
         table
@@ -36,29 +34,26 @@ impl Tableau {
         let mut candidate_ratio: Rational64 = Ratio::zero(); //Placeholder until set
         //Find the best ratio of nonbasic columns
         for col in 0..self.matrix.ncols() {
-            if true { // !self.nonbasic_columns.contains(&col) { //Todo figure out if this is right
-                //println!("Nonbasics does not contain: {}", col);
-                for (index, val) in self.matrix.column(col).iter().enumerate() {
-                    let pivot_value = self.matrix[(index, pivot_col)];
-                    if pivot_value > Ratio::zero() {
-                        let ratio = self.matrix[(index, self.matrix.ncols()-1)] / pivot_value;
-                        match pivot_row {
-                            Some(_r) => {
-                                if ratio < candidate_ratio {
-                                    pivot_row = Some(index);
-                                    candidate_ratio = ratio;
-                                }
-                            }
-                            None => {
+            for (index, val) in self.matrix.column(col).iter().enumerate() {
+                let pivot_value = self.matrix[(index, pivot_col)];
+                if pivot_value > Ratio::zero() {
+                    let ratio = self.matrix[(index, self.matrix.ncols()-1)] / pivot_value;
+                    match pivot_row {
+                        Some(_r) => {
+                            if ratio < candidate_ratio {
                                 pivot_row = Some(index);
                                 candidate_ratio = ratio;
                             }
+                        }
+                        None => {
+                            pivot_row = Some(index);
+                            candidate_ratio = ratio;
                         }
                     }
                 }
             }
         }
-        println!("row: {:?} col: {}", pivot_row, pivot_col);
+
         match pivot_row {
             Some(r) => {
                 //Set the value of (pivot_row, pivot_col) to 1
@@ -67,8 +62,6 @@ impl Tableau {
                     let mut row = self.matrix.row_mut(r);
                     row *= value;
                 }
-                println!("{}", self.matrix);
-                println!("{:?}", self.nonbasic_columns);
                 //Zero out the rest of the pivot_column with row operations using pivot_row
                 let mut row_vec = Vec::new();
                 for value in self.matrix.row(r).iter() {
@@ -86,14 +79,7 @@ impl Tableau {
                         row += row_copy;
                     }
                 }
-                println!("{}", self.matrix);
-                println!("{:?}", self.nonbasic_columns);
-                //Find the nonbasic column we replaced
-                for i in 0..self.nonbasic_columns.len() {
-                    if self.nonbasic_columns[i] == pivot_col {
-                        self.nonbasic_columns[i] = r;
-                    }
-                }
+
                 return true
             }
             None => {
@@ -103,7 +89,7 @@ impl Tableau {
     }
     ///Choose the nonbasic variable that will have the best effect for optimization
     fn choose_var(&self) -> usize {
-        let mut best_col = self.nonbasic_columns[0];
+        let mut best_col = 0;
         for col in 0..self.matrix.ncols()-1 {
             if self.matrix[(0, col)] < self.matrix[(0, best_col)] {
                 best_col = col;
@@ -121,11 +107,35 @@ impl Tableau {
         return true;
     }
 
+    fn read_solution(&self) -> Vec<Rational64> {
+        let mut values = Vec::new();
+        for var_column in self.real_variables.iter() {
+            let mut row = None; //Row suspected to hold the value of the variable
+            for (index, val) in self.matrix.column(*var_column).iter().enumerate() {
+                if val != &Ratio::zero() {
+                    match row {
+                        Some(_) => {
+                            values.push(Ratio::zero()); //Confirmed nonbasic
+                            continue;
+                        }
+                        None => {
+                            row = Some(index);
+                        }
+                    }
+                }
+            }
+            if let Some(r) = row {
+                values.push(self.matrix[(r, self.matrix.ncols()-1)]);
+            } else { //The whole column was zero. Unknown if this can happen
+                values.push(Ratio::zero());
+            }
+        }
+        return values;
+    }
+
 }
 
 fn main() {
-    use std::env;
-    let args: Vec<String> = env::args().collect();
     let n = 5;
     let m = 7;
     let test1 =
@@ -153,8 +163,14 @@ fn main() {
     0, 0, 0, 0, 1,
     0, 200, 60, 34, 14];
     let mut table = Tableau::new(n, m, &test3);
-    //println!("{:?}", table.matrix[[0, 0]]);
+
     while table.pivot() {}
-    //println!("{:?}", table.nonbasic_columns);
+
+    let solution = table.read_solution();
+    println!("Finished Tableaux: {}", table.matrix);
+    print!("Solution: ");
+    for val in solution {
+        print!("{} ", val);
+    }
 }
 
