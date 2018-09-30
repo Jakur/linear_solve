@@ -43,7 +43,8 @@ impl Tableau {
             real_variables,
         }
     }
-    fn new(n: usize, m: usize, slice: &[i64]) -> Tableau {
+    ///Creates a Tableau from a single slice representing a standard LP
+    fn new_from_tabular(n: usize, m: usize, slice: &[i64]) -> Tableau {
         //Debug testing array
         let table = Tableau {
             matrix: DMatrix::from_iterator(n, m, slice.iter()
@@ -98,11 +99,10 @@ impl Tableau {
                 for row_index in 0..self.matrix.nrows() {
                     let col_val = self.matrix[(row_index, pivot_col)];
                     if row_index != r && col_val != Ratio::zero() {
-                        let mut row_copy = DMatrix::from_row_slice(1, self.matrix.ncols(), &row_vec[..]);
+                        let mut row_copy = DMatrix::from_row_slice(1, self.matrix.ncols(),
+                                                                   &row_vec[..]);
                         let mut row = self.matrix.row_mut(row_index);
-//                        row.copy_from(&(row + self.matrix.row(r)));
                         let scaling = Ratio::from_integer(-1) * col_val;
-//                        row.add_to(scaling, self.matrix.row(r), 1);
                         row_copy *= scaling;
                         row += row_copy;
                     }
@@ -162,42 +162,20 @@ impl Tableau {
     }
 
 }
-
-fn main() {
-    let n = 5;
-    let m = 7;
-    let test1 =
-        [-4, 2, -3, 0, 2,
-        -3, 3, 2, 2, 1,
-        0, 1, 0, 0, 0,
-        0, 0, 1, 0, 0,
-        0, 0, 0, 1, 0,
-        0, 0, 0, 0, 1,
-        0, 6, 3, 5, 4]; //Column major
-    let test2 =
-    [-1, 2, 4, 2,
-    -2, 1, 2, 5,
-    1, 1, 3, 5,
-    0, 1, 0, 0,
-    0, 0, 1, 0,
-    0, 0, 0, 1,
-    0, 14, 28, 30];
-    let test3 =
-    [-1000, 10, 2, 1, 0,
-    -1200, 5, 3, 0, 1,
-    0, 1, 0, 0, 0,
-    0, 0, 1, 0, 0,
-    0, 0, 0, 1, 0,
-    0, 0, 0, 0, 1,
-    0, 200, 60, 34, 14];
-
-    //test_string is equivalent to test3
-    let test_string = "1000 1200 0\n10 5 200\n2 3 60\n1 0 34\n0 1 14";
-    let mut test_vec: Vec<Vec<Rational64>> = test_string.lines()
+///Parses a matrix as written in text as a vector of row vectors
+fn parse_inequalities(text: &str) -> Vec<Vec<Rational64>> {
+    let mut vec: Vec<Vec<Rational64>> = text.lines()
         .map(|line| line.split_whitespace()
         .map(|x| x.parse().unwrap()).collect()).collect();
     //Make first row, i.e. objective function values, negative
-    test_vec[0] = test_vec[0].iter().map(|num| num * -1).collect();
+    vec[0] = vec[0].iter().map(|num| num * -1).collect();
+    return vec;
+}
+
+fn main() {
+    //test_string is equivalent to test3
+    let test_string = "1000 1200 0\n10 5 200\n2 3 60\n1 0 34\n0 1 14";
+    let test_vec = parse_inequalities(test_string);
 
     //let mut table = Tableau::new(n, m, &test3);
     let mut table = Tableau::new_standard(test_vec);
@@ -213,5 +191,68 @@ fn main() {
         print!("{} ", val);
     }
     println!("\nObjective Function Value: {}", table.matrix[(0, table.matrix.ncols() - 1)]);
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_standard_parsing() {
+        let test_str1 = "4 3 0\n2 3 6\n-3 2 3\n0 2 5\n2 1 4";
+        let test_str2 = "20 10 15 0\n3 2 5 55\n2 1 1 26\n1 1 3 30\n5 2 4 57";
+        let test_str3 = "1000 1200 0\n10 5 200\n2 3 60\n1 0 34\n0 1 14";
+        let vec1 = parse_inequalities(test_str1);
+        let vec2 = parse_inequalities(test_str2);
+        let vec3 = parse_inequalities(test_str3);
+        let test1 = [
+            -4, 2, -3, 0, 2,
+            -3, 3, 2, 2, 1,
+            0, 1, 0, 0, 0,
+            0, 0, 1, 0, 0,
+            0, 0, 0, 1, 0,
+            0, 0, 0, 0, 1,
+            0, 6, 3, 5, 4]; //Column major
+        let test2 = [
+            -20, 3, 2, 1, 5,
+            -10, 2, 1, 1, 2,
+            -15, 5, 1, 3, 4,
+            0, 1, 0, 0, 0,
+            0, 0, 1, 0, 0,
+            0, 0, 0, 1, 0,
+            0, 0, 0, 0, 1,
+            0, 55, 26, 30, 57];
+        let test3 = [
+            -1000, 10, 2, 1, 0,
+            -1200, 5, 3, 0, 1,
+            0, 1, 0, 0, 0,
+            0, 0, 1, 0, 0,
+            0, 0, 0, 1, 0,
+            0, 0, 0, 0, 1,
+            0, 200, 60, 34, 14];
+        let tab1 = (Tableau::new_standard(vec1),
+                    Tableau::new_from_tabular(5, 7, &test1));
+        let tab2 = (Tableau::new_standard(vec2),
+                    Tableau::new_from_tabular(5, 8, &test2));
+        let tab3 = (Tableau::new_standard(vec3),
+                    Tableau::new_from_tabular(5, 7, &test3));
+        assert_eq!(tab1.0.matrix, tab1.1.matrix);
+        assert_eq!(tab2.0.matrix, tab2.1.matrix);
+        assert_eq!(tab3.0.matrix, tab3.1.matrix);
+    }
+    #[test]
+    fn test_solutions() {
+        let test_arr = ["1000 1200 0\n10 5 200\n2 3 60\n1 0 34\n0 1 14"];
+        let solutions = [
+            vec![Ratio::from_integer(15), Ratio::from_integer(10)]
+        ];
+        for i in 0..test_arr.len() {
+            let string = test_arr[i];
+            let vec = parse_inequalities(string);
+            let mut table = Tableau::new_standard(vec);
+            while table.pivot() {}
+            assert_eq!(table.read_solution(), solutions[i]);
+        }
+
+    }
 }
 
