@@ -61,23 +61,21 @@ impl Tableau {
         let pivot_col = self.choose_var();
         let mut pivot_row = None;
         let mut candidate_ratio: Rational64 = Ratio::zero(); //Placeholder until set
-        //Find the best ratio of nonbasic columns
-        for col in 0..self.matrix.ncols() {
-            for (index, val) in self.matrix.column(col).iter().enumerate() {
-                let pivot_value = self.matrix[(index, pivot_col)];
-                if pivot_value > Ratio::zero() {
-                    let ratio = self.matrix[(index, self.matrix.ncols()-1)] / pivot_value;
-                    match pivot_row {
-                        Some(_r) => {
-                            if ratio < candidate_ratio {
-                                pivot_row = Some(index);
-                                candidate_ratio = ratio;
-                            }
-                        }
-                        None => {
+        //Find the best ratio for the pivot column
+        for index in 1..self.matrix.nrows() {
+            let pivot_value = self.matrix[(index, pivot_col)];
+            if pivot_value > Ratio::zero() {
+                let ratio = self.matrix[(index, self.matrix.ncols()-1)] / pivot_value;
+                match pivot_row {
+                    Some(_r) => {
+                        if ratio < candidate_ratio {
                             pivot_row = Some(index);
                             candidate_ratio = ratio;
                         }
+                    }
+                    None => {
+                        pivot_row = Some(index);
+                        candidate_ratio = ratio;
                     }
                 }
             }
@@ -241,8 +239,14 @@ mod test {
     }
     #[test]
     fn test_solutions() {
-        let test_arr = ["1000 1200 0\n10 5 200\n2 3 60\n1 0 34\n0 1 14"];
+        let test_arr = [
+            "4 3 0\n2 3 6\n-3 2 3\n0 2 5\n2 1 4",
+            "20 10 15 0\n3 2 5 55\n2 1 1 26\n1 1 3 30\n5 2 4 57",
+            "1000 1200 0\n10 5 200\n2 3 60\n1 0 34\n0 1 14",
+        ];
         let solutions = [
+            vec![Ratio::new(3, 2), Ratio::from_integer(1)],
+            vec![Ratio::new(18, 10), Ratio::new(208, 10), Ratio::new(16, 10)],
             vec![Ratio::from_integer(15), Ratio::from_integer(10)]
         ];
         for i in 0..test_arr.len() {
