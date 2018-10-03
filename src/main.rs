@@ -162,20 +162,59 @@ impl Tableau {
 }
 ///Parses a matrix as written in text as a vector of row vectors
 fn parse_inequalities(text: &str) -> Vec<Vec<Rational64>> {
-    let mut vec: Vec<Vec<Rational64>> = text.lines()
-        .map(|line| line.split_whitespace()
-        .map(|x| x.parse().unwrap()).collect()).collect();
+    let mut greater = Vec::new();
+    let mut equals = Vec::new();
+    let mut vec: Vec<Vec<Rational64>> = text.lines().enumerate()
+        .map(|(index, line)| line.split_whitespace()
+        .filter_map(|x| {
+            match x.parse() {
+                Ok(num) => {
+                    Some(num)
+                }
+                _ => {
+                    match x {
+                        ">=" => {greater.push(index)},
+                        "=" => {equals.push(index)},
+                        "<=" => {} //Already canonical form, okay
+                        _ => {panic!("Unrecognized string supplied.")}
+                    }
+                    None
+                }
+            }
+        }).collect()).collect();
+    //Make sure the objective function is not put into the non-standard groups
+    if greater.len() > 0 {
+        if greater[0] == 0 {
+            greater.swap_remove(0);
+        }
+    }
+    if equals.len() > 0 {
+        if equals[0] == 0 {
+            equals.swap_remove(0);
+        }
+    }
     //Make first row, i.e. objective function values, negative
     vec[0] = vec[0].iter().map(|num| num * -1).collect();
+    //Flip the signs to make greater than or equal to into less than or equal to
+    for index in greater.into_iter() {
+        for i in 0..vec[index].len() {
+            vec[index][i] *= -1;
+        }
+    }
+    //Add the -1 * row to the tableaux to represent row >= x and row <= x
+    for index in equals.into_iter() {
+        let opposite: Vec<_> = vec[index].iter()
+            .map(|num| Ratio::from_integer(-1) * num).collect();
+        vec.push(opposite);
+    }
     return vec;
 }
 
 fn main() {
     //test_string is equivalent to test3
-    let test_string = "1000 1200 0\n10 5 200\n2 3 60\n1 0 34\n0 1 14";
+    let test_string = "1000 1200 0\n10 5 200\n<= 2 3 60\n<= 1 0 34\n<= 0 1 14";
     let test_vec = parse_inequalities(test_string);
 
-    //let mut table = Tableau::new(n, m, &test3);
     let mut table = Tableau::new_standard(test_vec);
 
     println!("Starting Tableau: {}", table.matrix);
