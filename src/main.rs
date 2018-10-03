@@ -135,14 +135,14 @@ impl Tableau {
     ///Find and return the optimal values of the true variables
     fn read_solution(&self) -> Vec<Rational64> {
         let mut values = Vec::new();
-        for var_column in self.real_variables.iter() {
+        'outer: for var_column in self.real_variables.iter() {
             let mut row = None; //Row suspected to hold the value of the variable
             for (index, val) in self.matrix.column(*var_column).iter().enumerate() {
                 if val != &Ratio::zero() {
                     match row {
                         Some(_) => {
                             values.push(Ratio::zero()); //Confirmed nonbasic
-                            continue;
+                            continue 'outer;
                         }
                         None => {
                             row = Some(index);
@@ -235,7 +235,7 @@ fn main() {
 
     println!("Starting Tableau: {}", table.matrix);
 
-    while table.pivot() {println!("{}", table.matrix);}
+    while table.pivot() {}
 
     let solution = table.read_solution();
     println!("Finished Tableau: {}", table.matrix);
