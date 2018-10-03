@@ -211,15 +211,31 @@ fn parse_inequalities(text: &str) -> Vec<Vec<Rational64>> {
 }
 
 fn main() {
-    //test_string is equivalent to test3
-    let test_string = "1000 1200 0\n10 5 200\n<= 2 3 60\n<= 1 0 34\n<= 0 1 14";
-    let test_vec = parse_inequalities(test_string);
+    use std::env;
+    use std::fs::File;
+    use std::io::Read;
 
-    let mut table = Tableau::new_standard(test_vec);
+    let args: Vec<String> = env::args().collect();
+    let input_data = match args.get(1) {
+        Some(file_string) => {
+            let mut f = File::open(file_string).expect("File not found!");
+            let mut contents = String::new();
+            f.read_to_string(&mut contents).expect("File reading failed!");
+            contents
+        },
+        _ => {
+            println!("No input file given.");
+            return;
+        }
+    };
+
+    let vec = parse_inequalities(&input_data);
+
+    let mut table = Tableau::new_standard(vec);
 
     println!("Starting Tableau: {}", table.matrix);
 
-    while table.pivot() {}
+    while table.pivot() {println!("{}", table.matrix);}
 
     let solution = table.read_solution();
     println!("Finished Tableau: {}", table.matrix);
