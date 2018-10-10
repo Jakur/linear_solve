@@ -8,51 +8,46 @@ use num_rational::Rational64;
 use num_rational::Ratio;
 use nalgebra::DMatrix;
 
+trait Tableau {
+    fn matrix(&self) -> &DMatrix<Rational64>;
+    fn matrix_mut(&mut self) -> &mut DMatrix<Rational64>;
+    fn pivot(&mut self) -> bool;
+    ///Choose the nonbasic variable that will have the best effect for optimization
+    fn choose_var(&self) -> usize {
+        let mut best_col = 0;
+        let matrix = self.matrix();
+        for col in 0..matrix.ncols()-1 {
+            if matrix[(0, col)] < matrix[(0, best_col)] {
+                best_col = col;
+            }
+        }
+        return best_col;
+    }
+    fn is_optimal(&self) -> bool {
+        let matrix = self.matrix();
+        for col in 0..matrix.ncols()-1 {
+            if matrix[(0, col)] < Ratio::zero() {
+                return false;
+            }
+        }
+        return true;
+    }
+}
 
-struct Tableau {
+struct LP {
     matrix: DMatrix<Rational64>,
     real_variables: Vec<usize>, //Not slack variables
 }
 
-impl Tableau {
-    ///Creates a tableaux from a vector of inequalities in the standard form
-    fn new_standard(vector: Vec<Vec<Rational64>>) -> Tableau {
-        let variables = vector[1].len() - 1;
-        let rows = vector.len(); //constraints + 1
-        let cols = vector.len() + variables; //constraints + 1 + vars
-        let mut matrix = DMatrix::from_element(rows, cols, Ratio::zero());
-        //Init variable columns
-        for i in 0..rows {
-            for j in 0..variables {
-                matrix[(i, j)] = vector[i][j];
-            }
-        }
-        let mut row = 1;
-        //Init slack variables
-        for col in variables..cols-1 {
-            matrix[(row, col)] = Ratio::one();
-            row += 1;
-        }
-        //Init row values
-        for r in 1..rows {
-            matrix[(r, cols-1)] = vector[r][variables];
-        }
-        let real_variables: Vec<_> = (0..variables).collect();
-        Tableau {
-            matrix,
-            real_variables,
-        }
+impl Tableau for LP {
+    fn matrix(&self) -> &DMatrix<Rational64> {
+        &self.matrix
     }
-    ///Creates a Tableau from a single slice representing a standard LP
-    fn new_from_tabular(n: usize, m: usize, slice: &[i64]) -> Tableau {
-        //Debug testing array
-        let table = Tableau {
-            matrix: DMatrix::from_iterator(n, m, slice.iter()
-                .map(|n| Ratio::from_integer(*n))),
-            real_variables: vec![0, 1],
-        };
-        table
+
+    fn matrix_mut(&mut self) -> &mut DMatrix<Rational64> {
+        &mut self.matrix
     }
+
     fn pivot(&mut self) -> bool {
         //Check optimal
         if self.is_optimal() {
@@ -113,24 +108,47 @@ impl Tableau {
             }
         }
     }
-    ///Choose the nonbasic variable that will have the best effect for optimization
-    fn choose_var(&self) -> usize {
-        let mut best_col = 0;
-        for col in 0..self.matrix.ncols()-1 {
-            if self.matrix[(0, col)] < self.matrix[(0, best_col)] {
-                best_col = col;
-            }
-        }
-        return best_col;
-    }
+}
 
-    fn is_optimal(&self) -> bool {
-        for col in 0..self.matrix.ncols()-1 {
-            if self.matrix[(0, col)] < Ratio::zero() {
-                return false;
+
+impl LP {
+    ///Creates a tableaux from a vector of inequalities in the standard form
+    fn new_standard(vector: Vec<Vec<Rational64>>) -> LP {
+        let variables = vector[1].len() - 1;
+        let rows = vector.len(); //constraints + 1
+        let cols = vector.len() + variables; //constraints + 1 + vars
+        let mut matrix = DMatrix::from_element(rows, cols, Ratio::zero());
+        //Init variable columns
+        for i in 0..rows {
+            for j in 0..variables {
+                matrix[(i, j)] = vector[i][j];
             }
         }
-        return true;
+        let mut row = 1;
+        //Init slack variables
+        for col in variables..cols-1 {
+            matrix[(row, col)] = Ratio::one();
+            row += 1;
+        }
+        //Init row values
+        for r in 1..rows {
+            matrix[(r, cols-1)] = vector[r][variables];
+        }
+        let real_variables: Vec<_> = (0..variables).collect();
+        LP {
+            matrix,
+            real_variables,
+        }
+    }
+    ///Creates a Tableau from a single slice representing a standard LP
+    fn new_from_tabular(n: usize, m: usize, slice: &[i64]) -> LP {
+        //Debug testing array
+        let table = LP {
+            matrix: DMatrix::from_iterator(n, m, slice.iter()
+                .map(|n| Ratio::from_integer(*n))),
+            real_variables: vec![0, 1],
+        };
+        table
     }
     ///Find and return the optimal values of the true variables
     fn read_solution(&self) -> Vec<Rational64> {
@@ -158,7 +176,6 @@ impl Tableau {
         }
         return values;
     }
-
 }
 ///Parses a matrix as written in text as a vector of row vectors
 fn parse_inequalities(text: &str) -> Vec<Vec<Rational64>> {
@@ -231,7 +248,7 @@ fn main() {
 
     let vec = parse_inequalities(&input_data);
 
-    let mut table = Tableau::new_standard(vec);
+    let mut table = LP::new_standard(vec);
 
     println!("Starting Tableau: {}", table.matrix);
 
@@ -282,12 +299,12 @@ mod test {
             0, 0, 0, 1, 0,
             0, 0, 0, 0, 1,
             0, 200, 60, 34, 14];
-        let tab1 = (Tableau::new_standard(vec1),
-                    Tableau::new_from_tabular(5, 7, &test1));
-        let tab2 = (Tableau::new_standard(vec2),
-                    Tableau::new_from_tabular(5, 8, &test2));
-        let tab3 = (Tableau::new_standard(vec3),
-                    Tableau::new_from_tabular(5, 7, &test3));
+        let tab1 = (LP::new_standard(vec1),
+                    LP::new_from_tabular(5, 7, &test1));
+        let tab2 = (LP::new_standard(vec2),
+                    LP::new_from_tabular(5, 8, &test2));
+        let tab3 = (LP::new_standard(vec3),
+                    LP::new_from_tabular(5, 7, &test3));
         assert_eq!(tab1.0.matrix, tab1.1.matrix);
         assert_eq!(tab2.0.matrix, tab2.1.matrix);
         assert_eq!(tab3.0.matrix, tab3.1.matrix);
@@ -307,7 +324,7 @@ mod test {
         for i in 0..test_arr.len() {
             let string = test_arr[i];
             let vec = parse_inequalities(string);
-            let mut table = Tableau::new_standard(vec);
+            let mut table = LP::new_standard(vec);
             while table.pivot() {}
             assert_eq!(table.read_solution(), solutions[i]);
         }
