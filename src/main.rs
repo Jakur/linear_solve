@@ -10,7 +10,7 @@ use nalgebra::DMatrix;
 
 enum TabularData {
     LP(Vec<Rational64>, Vec<Vec<Rational64>>),
-    ParameterLP(Vec<Rational64>, Vec<Vec<Rational64>>)
+    ParameterLP(usize, Vec<Rational64>, Vec<Vec<Rational64>>)
 }
 
 trait Tableau {
@@ -43,8 +43,69 @@ trait Tableau {
 struct ParameterLP {
     matrix: DMatrix<Rational64>,
     lambda_count: usize, //Index of the first slack column, also number of lambda
-    optim_function: Vec<Rational64>, //
-    optim_row: Vec<Rational64>,
+    fixed_x: Vec<Rational64>, //Fixed values of x for a single tableaux solution
+    optim_function: Vec<Rational64>,
+}
+
+impl Tableau for ParameterLP {
+    fn matrix(&self) -> &DMatrix<Rational64>{
+        &self.matrix
+    }
+
+    fn matrix_mut(&mut self) -> &mut DMatrix<Rational64> {
+        &mut self.matrix
+    }
+
+    fn pivot(&mut self) -> bool {
+        unimplemented!()
+    }
+
+    fn read_solution(&self) -> Vec<Ratio<i64>> {
+        unimplemented!()
+    }
+}
+
+impl ParameterLP {
+    fn new_standard(x_count: usize, optim: Vec<Rational64>,
+                    constraints: Vec<Vec<Rational64>>) -> ParameterLP {
+        let variables = constraints[0].len() - 1;
+        let rows = constraints.len() + 1;
+        let cols = constraints.len() + 1 + variables;
+        let mut matrix = DMatrix::from_element(rows, cols, Ratio::zero());
+        //Init variable columns
+        for i in 1..rows {
+            for j in 0..variables {
+                matrix[(i, j)] = constraints[i-1][j];
+            }
+        }
+        let mut row = 1;
+        //Init slack variables
+        for col in variables..cols-1 {
+            matrix[(row, col)] = Ratio::one();
+            row += 1;
+        }
+        //Init row values
+        for r in 1..rows {
+            matrix[(r, cols-1)] = constraints[r-1][variables];
+        }
+        //Fix all x initially to zero
+        let fixed_x = vec![Ratio::zero(); x_count];
+
+        let mut counter = x_count;
+        println!("{:?}", optim);
+        for col in 0..variables {
+            matrix[(0, col)] = optim[counter];
+            println!("Optim of col: {}", optim[counter]);
+            counter += x_count + 1;
+        }
+        let para = ParameterLP {
+            matrix,
+            lambda_count: variables,
+            fixed_x,
+            optim_function: optim,
+        };
+        para
+    }
 }
 
 struct LP {
@@ -241,8 +302,21 @@ fn parse_inequalities(text: &str) -> TabularData {
             }
         }).collect();
         return TabularData::LP(opt, vec);
-    } else {
-        unimplemented!();
+    } else { //Parametrized LP
+        let x_count = split[1].split_whitespace().count() - 1; //-1 for constant term
+        let xs: Vec<_> = split.into_iter().map(|lambda| {
+            lambda.split_whitespace().filter_map(|x| {
+                match x.parse::<Rational64>() {
+                    Ok(num) => {Some(num * -1)}, //Todo figure out if * -1 is appropriate
+                    _ => None,
+                }
+            })
+        }).flatten().collect();
+        for x in xs.iter() {
+            println!("{}", x);
+        }
+        println!("X count: {}", x_count);
+        return TabularData::ParameterLP(x_count, xs, vec);
     }
 }
 
@@ -252,8 +326,8 @@ fn create_table(text: &str) -> Box<Tableau> {
         TabularData::LP(opt, con) => {
             Box::new(LP::new_standard(opt, con))
         }
-        TabularData::ParameterLP(var_opt, lambda_con) => {
-            unimplemented!();
+        TabularData::ParameterLP(x_count, var_opt, lambda_con) => {
+            Box::new(ParameterLP::new_standard(x_count, var_opt, lambda_con))
         }
     }
 }
