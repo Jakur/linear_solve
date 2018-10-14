@@ -8,6 +8,11 @@ use num_rational::Rational64;
 use num_rational::Ratio;
 use nalgebra::DMatrix;
 
+enum TabularData {
+    LP(Vec<Rational64>, Vec<Vec<Rational64>>),
+    ParameterLP(Vec<Rational64>, Vec<Vec<Rational64>>)
+}
+
 trait Tableau {
     fn matrix(&self) -> &DMatrix<Rational64>;
     fn matrix_mut(&mut self) -> &mut DMatrix<Rational64>;
@@ -32,6 +37,14 @@ trait Tableau {
         }
         return true;
     }
+    fn read_solution(&self) -> Vec<Rational64>;
+}
+
+struct ParameterLP {
+    matrix: DMatrix<Rational64>,
+    lambda_count: usize, //Index of the first slack column, also number of lambda
+    optim_function: Vec<Rational64>, //
+    optim_row: Vec<Rational64>,
 }
 
 struct LP {
@@ -108,48 +121,6 @@ impl Tableau for LP {
             }
         }
     }
-}
-
-
-impl LP {
-    ///Creates a tableaux from a vector of inequalities in the standard form
-    fn new_standard(vector: Vec<Vec<Rational64>>) -> LP {
-        let variables = vector[1].len() - 1;
-        let rows = vector.len(); //constraints + 1
-        let cols = vector.len() + variables; //constraints + 1 + vars
-        let mut matrix = DMatrix::from_element(rows, cols, Ratio::zero());
-        //Init variable columns
-        for i in 0..rows {
-            for j in 0..variables {
-                matrix[(i, j)] = vector[i][j];
-            }
-        }
-        let mut row = 1;
-        //Init slack variables
-        for col in variables..cols-1 {
-            matrix[(row, col)] = Ratio::one();
-            row += 1;
-        }
-        //Init row values
-        for r in 1..rows {
-            matrix[(r, cols-1)] = vector[r][variables];
-        }
-        let real_variables: Vec<_> = (0..variables).collect();
-        LP {
-            matrix,
-            real_variables,
-        }
-    }
-    ///Creates a Tableau from a single slice representing a standard LP
-    fn new_from_tabular(n: usize, m: usize, slice: &[i64]) -> LP {
-        //Debug testing array
-        let table = LP {
-            matrix: DMatrix::from_iterator(n, m, slice.iter()
-                .map(|n| Ratio::from_integer(*n))),
-            real_variables: vec![0, 1],
-        };
-        table
-    }
     ///Find and return the optimal values of the true variables
     fn read_solution(&self) -> Vec<Rational64> {
         let mut values = Vec::new();
@@ -177,11 +148,60 @@ impl LP {
         return values;
     }
 }
+
+
+impl LP {
+    ///Creates a tableaux from a vector of inequalities in the standard form
+    fn new_standard(optim: Vec<Rational64>, constraints: Vec<Vec<Rational64>>) -> LP {
+        let variables = constraints[0].len() - 1;
+        let rows = constraints.len() + 1;
+        let cols = constraints.len() + 1 + variables;
+        let mut matrix = DMatrix::from_element(rows, cols, Ratio::zero());
+        //Init optimization row
+        for i in 0..optim.len() {
+            matrix[(0, i)] = optim[i];
+        }
+        //Init variable columns
+        for i in 1..rows {
+            for j in 0..variables {
+                matrix[(i, j)] = constraints[i-1][j];
+            }
+        }
+        let mut row = 1;
+        //Init slack variables
+        for col in variables..cols-1 {
+            matrix[(row, col)] = Ratio::one();
+            row += 1;
+        }
+        //Init row values
+        for r in 1..rows {
+            matrix[(r, cols-1)] = constraints[r-1][variables];
+        }
+        let real_variables: Vec<_> = (0..variables).collect();
+        LP {
+            matrix,
+            real_variables,
+        }
+    }
+    ///Creates a Tableau from a single slice representing a standard LP
+    fn new_from_tabular(n: usize, m: usize, slice: &[i64]) -> LP {
+        //Debug testing array
+        let table = LP {
+            matrix: DMatrix::from_iterator(n, m, slice.iter()
+                .map(|n| Ratio::from_integer(*n))),
+            real_variables: vec![0, 1],
+        };
+        table
+    }
+}
 ///Parses a matrix as written in text as a vector of row vectors
-fn parse_inequalities(text: &str) -> Vec<Vec<Rational64>> {
+fn parse_inequalities(text: &str) -> TabularData {
     let mut greater = Vec::new();
     let mut equals = Vec::new();
-    let mut vec: Vec<Vec<Rational64>> = text.lines().enumerate()
+    let mut iter = text.lines().enumerate();
+    let (_, opt_line) = iter.next().expect("Optimization line malformed");
+    let split: Vec<_> = opt_line.split(|c| c == '[' || c == ']').collect();
+    let mut vec: Vec<Vec<Rational64>> = iter
         .map(|(index, line)| line.split_whitespace()
         .filter_map(|x| {
             match x.parse() {
@@ -190,8 +210,8 @@ fn parse_inequalities(text: &str) -> Vec<Vec<Rational64>> {
                 }
                 _ => {
                     match x {
-                        ">=" => {greater.push(index)},
-                        "=" => {equals.push(index)},
+                        ">=" => {greater.push(index-1)},
+                        "=" => {equals.push(index-1)},
                         "<=" => {} //Already canonical form, okay
                         _ => {panic!("Unrecognized string supplied.")}
                     }
@@ -199,19 +219,7 @@ fn parse_inequalities(text: &str) -> Vec<Vec<Rational64>> {
                 }
             }
         }).collect()).collect();
-    //Make sure the objective function is not put into the non-standard groups
-    if greater.len() > 0 {
-        if greater[0] == 0 {
-            greater.swap_remove(0);
-        }
-    }
-    if equals.len() > 0 {
-        if equals[0] == 0 {
-            equals.swap_remove(0);
-        }
-    }
-    //Make first row, i.e. objective function values, negative
-    vec[0] = vec[0].iter().map(|num| num * -1).collect();
+
     //Flip the signs to make greater than or equal to into less than or equal to
     for index in greater.into_iter() {
         for i in 0..vec[index].len() {
@@ -224,7 +232,30 @@ fn parse_inequalities(text: &str) -> Vec<Vec<Rational64>> {
             .map(|num| Ratio::from_integer(-1) * num).collect();
         vec.push(opposite);
     }
-    return vec;
+    if split.len() == 1 { //Normal LP
+        let opt = split[0].split_whitespace().filter_map(|x| {
+            //Make optimization values negative
+            match x.parse::<Rational64>() {
+                Ok(num) => {Some(num * -1)},
+                _ => None,
+            }
+        }).collect();
+        return TabularData::LP(opt, vec);
+    } else {
+        unimplemented!();
+    }
+}
+
+fn create_table(text: &str) -> Box<Tableau> {
+    let parsed = parse_inequalities(text);
+    match parsed {
+        TabularData::LP(opt, con) => {
+            Box::new(LP::new_standard(opt, con))
+        }
+        TabularData::ParameterLP(var_opt, lambda_con) => {
+            unimplemented!();
+        }
+    }
 }
 
 fn main() {
@@ -246,21 +277,19 @@ fn main() {
         }
     };
 
-    let vec = parse_inequalities(&input_data);
+    let mut table = create_table(&input_data);
 
-    let mut table = LP::new_standard(vec);
-
-    println!("Starting Tableau: {}", table.matrix);
+    println!("Starting Tableau: {}", table.matrix());
 
     while table.pivot() {}
 
     let solution = table.read_solution();
-    println!("Finished Tableau: {}", table.matrix);
+    println!("Finished Tableau: {}", table.matrix());
     print!("Solution: ");
     for val in solution {
         print!("{} ", val);
     }
-    println!("\nObjective Function Value: {}", table.matrix[(0, table.matrix.ncols() - 1)]);
+    println!("\nObjective Function Value: {}", table.matrix()[(0, table.matrix().ncols() - 1)]);
 }
 
 #[cfg(test)]
@@ -271,9 +300,9 @@ mod test {
         let test_str1 = "4 3 0\n2 3 6\n-3 2 3\n0 2 5\n2 1 4";
         let test_str2 = "20 10 15 0\n3 2 5 55\n2 1 1 26\n1 1 3 30\n5 2 4 57";
         let test_str3 = "1000 1200 0\n10 5 200\n2 3 60\n1 0 34\n0 1 14";
-        let vec1 = parse_inequalities(test_str1);
-        let vec2 = parse_inequalities(test_str2);
-        let vec3 = parse_inequalities(test_str3);
+        let tab1 = create_table(test_str1);
+        let tab2 = create_table(test_str2);
+        let tab3 = create_table(test_str3);
         let test1 = [
             -4, 2, -3, 0, 2,
             -3, 3, 2, 2, 1,
@@ -299,15 +328,15 @@ mod test {
             0, 0, 0, 1, 0,
             0, 0, 0, 0, 1,
             0, 200, 60, 34, 14];
-        let tab1 = (LP::new_standard(vec1),
+        let tab1 = (tab1.matrix(),
                     LP::new_from_tabular(5, 7, &test1));
-        let tab2 = (LP::new_standard(vec2),
+        let tab2 = (tab2.matrix(),
                     LP::new_from_tabular(5, 8, &test2));
-        let tab3 = (LP::new_standard(vec3),
+        let tab3 = (tab3.matrix(),
                     LP::new_from_tabular(5, 7, &test3));
-        assert_eq!(tab1.0.matrix, tab1.1.matrix);
-        assert_eq!(tab2.0.matrix, tab2.1.matrix);
-        assert_eq!(tab3.0.matrix, tab3.1.matrix);
+        assert_eq!(tab1.0, &tab1.1.matrix);
+        assert_eq!(tab2.0, &tab2.1.matrix);
+        assert_eq!(tab3.0, &tab3.1.matrix);
     }
     #[test]
     fn test_solutions() {
@@ -323,8 +352,7 @@ mod test {
         ];
         for i in 0..test_arr.len() {
             let string = test_arr[i];
-            let vec = parse_inequalities(string);
-            let mut table = LP::new_standard(vec);
+            let mut table = create_table(string);
             while table.pivot() {}
             assert_eq!(table.read_solution(), solutions[i]);
         }
