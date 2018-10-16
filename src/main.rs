@@ -28,6 +28,31 @@ trait Tableau {
         }
         return best_col;
     }
+    fn choose_row(&self, pivot_col: usize) -> Option<usize> {
+        let matrix = self.matrix();
+        let mut pivot_row = None;
+        let mut candidate_ratio: Rational64 = Ratio::zero(); //Placeholder until set
+        //Find the best ratio for the pivot column
+        for index in 1..matrix.nrows() {
+            let pivot_value = matrix[(index, pivot_col)];
+            if pivot_value > Ratio::zero() {
+                let ratio = matrix[(index, matrix.ncols()-1)] / pivot_value;
+                match pivot_row {
+                    Some(_r) => {
+                        if ratio < candidate_ratio {
+                            pivot_row = Some(index);
+                            candidate_ratio = ratio;
+                        }
+                    }
+                    None => {
+                        pivot_row = Some(index);
+                        candidate_ratio = ratio;
+                    }
+                }
+            }
+        }
+        return pivot_row;
+    }
     fn is_optimal(&self) -> bool {
         let matrix = self.matrix();
         for col in 0..matrix.ncols()-1 {
@@ -128,27 +153,7 @@ impl Tableau for LP {
             return false;
         }
         let pivot_col = self.choose_var();
-        let mut pivot_row = None;
-        let mut candidate_ratio: Rational64 = Ratio::zero(); //Placeholder until set
-        //Find the best ratio for the pivot column
-        for index in 1..self.matrix.nrows() {
-            let pivot_value = self.matrix[(index, pivot_col)];
-            if pivot_value > Ratio::zero() {
-                let ratio = self.matrix[(index, self.matrix.ncols()-1)] / pivot_value;
-                match pivot_row {
-                    Some(_r) => {
-                        if ratio < candidate_ratio {
-                            pivot_row = Some(index);
-                            candidate_ratio = ratio;
-                        }
-                    }
-                    None => {
-                        pivot_row = Some(index);
-                        candidate_ratio = ratio;
-                    }
-                }
-            }
-        }
+        let pivot_row = self.choose_row(pivot_col);
 
         match pivot_row {
             Some(r) => {
