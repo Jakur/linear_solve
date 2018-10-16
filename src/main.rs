@@ -82,7 +82,46 @@ impl Tableau for ParameterLP {
     }
 
     fn pivot(&mut self) -> bool {
-        unimplemented!()
+        //Check optimal
+        if self.is_optimal() {
+            self.print_objective_fn();
+            return false;
+        }
+        let pivot_col = self.choose_var();
+        let pivot_row = self.choose_row(pivot_col);
+
+        match pivot_row {
+            Some(r) => {
+                //Set the value of (pivot_row, pivot_col) to 1
+                let value = Ratio::one() / self.matrix[(r, pivot_col)];
+                {
+                    let mut row = self.matrix.row_mut(r);
+                    row *= value;
+                }
+                //Zero out the rest of the pivot_column with row operations using pivot_row
+                let mut row_vec = Vec::new();
+                for value in self.matrix.row(r).iter() {
+                    row_vec.push(value.clone());
+                }
+                //Todo operations on variable objective function?
+                for row_index in 0..self.matrix.nrows() {
+                    let col_val = self.matrix[(row_index, pivot_col)];
+                    if row_index != r && col_val != Ratio::zero() {
+                        let mut row_copy = DMatrix::from_row_slice(1, self.matrix.ncols(),
+                                                                   &row_vec[..]);
+                        let mut row = self.matrix.row_mut(row_index);
+                        let scaling = Ratio::from_integer(-1) * col_val;
+                        row_copy *= scaling;
+                        row += row_copy;
+                    }
+                }
+
+                return true
+            }
+            None => {
+                return false
+            }
+        }
     }
 
     fn read_solution(&self) -> Vec<Ratio<i64>> {
@@ -114,7 +153,7 @@ impl ParameterLP {
             matrix[(r, cols-1)] = constraints[r-1][variables];
         }
         //Fix all x initially to zero
-        let fixed_x = vec![Ratio::zero(); x_count];
+        let fixed_x = vec![Ratio::from_integer(3); x_count]; //Todo fix this
 
         let mut counter = x_count;
         println!("{:?}", optim);
@@ -123,13 +162,34 @@ impl ParameterLP {
             println!("Optim of col: {}", optim[counter]);
             counter += x_count + 1;
         }
-        let para = ParameterLP {
+        let mut para = ParameterLP {
             matrix,
             lambda_count: variables,
             fixed_x,
             optim_function: optim,
         };
+        para.update_objective_row();
         para
+    }
+    fn update_objective_row(&mut self) {
+        let mut col = 0;
+        while col < self.lambda_count { //For each x column
+            let mut total = Ratio::zero();
+            let offset = col * (self.fixed_x.len() + 1);
+            for index in 0..self.fixed_x.len() {
+                total += self.optim_function[offset+index] * self.fixed_x[index];
+            }
+            total += self.optim_function[offset + self.fixed_x.len()]; //Constant term
+            self.matrix_mut()[(0, col)] = total;
+            col += 1;
+        }
+    }
+    fn print_objective_fn(&self) {
+        let mut counter = 1;
+        for chunk in self.optim_function.chunks(self.fixed_x.len() + 1) {
+            println!("Lambda{} {:?}", counter, chunk);
+            counter += 1;
+        }
     }
 }
 
@@ -362,12 +422,12 @@ fn main() {
 
     while table.pivot() {}
 
-    let solution = table.read_solution();
     println!("Finished Tableau: {}", table.matrix());
-    print!("Solution: ");
-    for val in solution {
-        print!("{} ", val);
-    }
+//    let solution = table.read_solution();
+//    print!("Solution: ");
+//    for val in solution {
+//        print!("{} ", val);
+//    }
     println!("\nObjective Function Value: {}", table.matrix()[(0, table.matrix().ncols() - 1)]);
 }
 
