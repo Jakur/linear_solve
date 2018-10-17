@@ -16,6 +16,7 @@ enum TabularData {
 trait Tableau {
     fn matrix(&self) -> &DMatrix<Rational64>;
     fn matrix_mut(&mut self) -> &mut DMatrix<Rational64>;
+    fn num_variables(&self) -> usize;
     fn solve(&mut self);
     fn pivot(&mut self) -> bool;
     ///Choose the nonbasic variable that will have the best effect for optimization
@@ -63,7 +64,32 @@ trait Tableau {
         }
         return true;
     }
-    fn read_solution(&self) -> Vec<Rational64>;
+    ///Find and return the optimal values of the true variables
+    fn read_solution(&self) -> Vec<Rational64> {
+        let mut values = Vec::new();
+        'outer: for var_column in 0..self.num_variables() {
+            let mut row = None; //Row suspected to hold the value of the variable
+            for (index, val) in self.matrix().column(var_column).iter().enumerate() {
+                if val != &Ratio::zero() {
+                    match row {
+                        Some(_) => {
+                            values.push(Ratio::zero()); //Confirmed nonbasic
+                            continue 'outer;
+                        }
+                        None => {
+                            row = Some(index);
+                        }
+                    }
+                }
+            }
+            if let Some(r) = row {
+                values.push(self.matrix()[(r, self.matrix().ncols()-1)]);
+            } else { //The whole column was zero. Unknown if this can happen
+                values.push(Ratio::zero());
+            }
+        }
+        return values;
+    }
 }
 
 struct ParameterLP {
@@ -82,29 +108,39 @@ impl Tableau for ParameterLP {
     fn matrix_mut(&mut self) -> &mut DMatrix<Rational64> {
         &mut self.matrix
     }
-
+    fn num_variables(&self) -> usize {
+        self.lambda_count
+    }
     fn solve(&mut self) {
         let num_solutions = 2; //Todo compute this, or find other halting condition
         let mut solutions = Vec::new();
         while solutions.len() < num_solutions {
             while self.pivot() {}
+            let lambda = self.read_solution();
             let mut vec = vec![Ratio::zero(); self.fixed_x.len() + 1];
-            for slice in self.optim_function.chunks(self.fixed_x.len() + 1) {
-                for (index, val) in slice.iter().enumerate() {
-                    vec[index] += *val;
+            for (sl_index, slice) in self.optim_function
+                .chunks(self.fixed_x.len() + 1).enumerate() {
+                for (var_index, val) in slice.iter().enumerate() {
+                    vec[var_index] += *val * lambda[sl_index];
                 }
             }
             if !solutions.contains(&vec) {
+                print!("Solution vector: ");
+                for x in vec.iter() {
+                    print!("{} ", x);
+                }
+                println!();
+                println!("{}", self.matrix);
                 solutions.push(vec);
             }
-            self.update_fixed_x();
             self.matrix = self.initial_condition.clone();
+            self.update_fixed_x();
+            self.update_objective_row();
         }
     }
     fn pivot(&mut self) -> bool {
         //Check optimal
         if self.is_optimal() {
-            self.print_objective_fn();
             return false;
         }
         let pivot_col = self.choose_var();
@@ -143,10 +179,6 @@ impl Tableau for ParameterLP {
             }
         }
     }
-
-    fn read_solution(&self) -> Vec<Ratio<i64>> {
-        unimplemented!()
-    }
 }
 
 impl ParameterLP {
@@ -173,13 +205,13 @@ impl ParameterLP {
             matrix[(r, cols-1)] = constraints[r-1][variables];
         }
         //Fix all x initially to zero
-        let fixed_x = vec![Ratio::from_integer(60); x_count]; //Todo fix this
+        let fixed_x = vec![Ratio::from_integer(0); x_count]; //Todo fix this
 
         let mut counter = x_count;
-        println!("{:?}", optim);
+        //println!("{:?}", optim);
         for col in 0..variables {
             matrix[(0, col)] = optim[counter];
-            println!("Optim of col: {}", optim[counter]);
+            //println!("Optim of col: {}", optim[counter]);
             counter += x_count + 1;
         }
         let mut para = ParameterLP {
@@ -222,7 +254,7 @@ impl ParameterLP {
 
 struct LP {
     matrix: DMatrix<Rational64>,
-    real_variables: Vec<usize>, //Not slack variables
+    variables: usize, //Number of non-slack variables
 }
 
 impl Tableau for LP {
@@ -232,6 +264,10 @@ impl Tableau for LP {
 
     fn matrix_mut(&mut self) -> &mut DMatrix<Rational64> {
         &mut self.matrix
+    }
+
+    fn num_variables(&self) -> usize {
+        self.variables
     }
 
     fn solve(&mut self) {
@@ -288,32 +324,6 @@ impl Tableau for LP {
             }
         }
     }
-    ///Find and return the optimal values of the true variables
-    fn read_solution(&self) -> Vec<Rational64> {
-        let mut values = Vec::new();
-        'outer: for var_column in self.real_variables.iter() {
-            let mut row = None; //Row suspected to hold the value of the variable
-            for (index, val) in self.matrix.column(*var_column).iter().enumerate() {
-                if val != &Ratio::zero() {
-                    match row {
-                        Some(_) => {
-                            values.push(Ratio::zero()); //Confirmed nonbasic
-                            continue 'outer;
-                        }
-                        None => {
-                            row = Some(index);
-                        }
-                    }
-                }
-            }
-            if let Some(r) = row {
-                values.push(self.matrix[(r, self.matrix.ncols()-1)]);
-            } else { //The whole column was zero. Unknown if this can happen
-                values.push(Ratio::zero());
-            }
-        }
-        return values;
-    }
 }
 
 
@@ -344,10 +354,9 @@ impl LP {
         for r in 1..rows {
             matrix[(r, cols-1)] = constraints[r-1][variables];
         }
-        let real_variables: Vec<_> = (0..variables).collect();
         LP {
             matrix,
-            real_variables,
+            variables,
         }
     }
     ///Creates a Tableau from a single slice representing a standard LP
@@ -356,7 +365,7 @@ impl LP {
         let table = LP {
             matrix: DMatrix::from_iterator(n, m, slice.iter()
                 .map(|n| Ratio::from_integer(*n))),
-            real_variables: vec![0, 1],
+            variables: 2,
         };
         table
     }
@@ -418,9 +427,6 @@ fn parse_inequalities(text: &str) -> TabularData {
                 }
             })
         }).flatten().collect();
-        for x in xs.iter() {
-            println!("{}", x);
-        }
         println!("X count: {}", x_count);
         return TabularData::ParameterLP(x_count, xs, vec);
     }
@@ -458,20 +464,7 @@ fn main() {
     };
 
     let mut table = create_table(&input_data);
-
-    println!("Starting Tableau: {}", table.matrix());
-
-    while table.pivot() {
-        println!("{}", table.matrix());
-    }
-
-    println!("Finished Tableau: {}", table.matrix());
-//    let solution = table.read_solution();
-//    print!("Solution: ");
-//    for val in solution {
-//        print!("{} ", val);
-//    }
-    println!("\nObjective Function Value: {}", table.matrix()[(0, table.matrix().ncols() - 1)]);
+    table.solve();
 }
 
 #[cfg(test)]
