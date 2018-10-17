@@ -16,6 +16,7 @@ enum TabularData {
 trait Tableau {
     fn matrix(&self) -> &DMatrix<Rational64>;
     fn matrix_mut(&mut self) -> &mut DMatrix<Rational64>;
+    fn solve(&mut self);
     fn pivot(&mut self) -> bool;
     ///Choose the nonbasic variable that will have the best effect for optimization
     fn choose_var(&self) -> usize {
@@ -70,6 +71,7 @@ struct ParameterLP {
     lambda_count: usize, //Index of the first slack column, also number of lambda
     fixed_x: Vec<Rational64>, //Fixed values of x for a single tableaux solution
     optim_function: Vec<Rational64>,
+    initial_condition: DMatrix<Rational64>,
 }
 
 impl Tableau for ParameterLP {
@@ -81,6 +83,24 @@ impl Tableau for ParameterLP {
         &mut self.matrix
     }
 
+    fn solve(&mut self) {
+        let num_solutions = 2; //Todo compute this, or find other halting condition
+        let mut solutions = Vec::new();
+        while solutions.len() < num_solutions {
+            while self.pivot() {}
+            let mut vec = vec![Ratio::zero(); self.fixed_x.len() + 1];
+            for slice in self.optim_function.chunks(self.fixed_x.len() + 1) {
+                for (index, val) in slice.iter().enumerate() {
+                    vec[index] += *val;
+                }
+            }
+            if !solutions.contains(&vec) {
+                solutions.push(vec);
+            }
+            self.update_fixed_x();
+            self.matrix = self.initial_condition.clone();
+        }
+    }
     fn pivot(&mut self) -> bool {
         //Check optimal
         if self.is_optimal() {
@@ -153,7 +173,7 @@ impl ParameterLP {
             matrix[(r, cols-1)] = constraints[r-1][variables];
         }
         //Fix all x initially to zero
-        let fixed_x = vec![Ratio::from_integer(3); x_count]; //Todo fix this
+        let fixed_x = vec![Ratio::from_integer(60); x_count]; //Todo fix this
 
         let mut counter = x_count;
         println!("{:?}", optim);
@@ -163,12 +183,13 @@ impl ParameterLP {
             counter += x_count + 1;
         }
         let mut para = ParameterLP {
-            matrix,
+            matrix: matrix.clone(),
             lambda_count: variables,
             fixed_x,
             optim_function: optim,
+            initial_condition: matrix
         };
-        para.update_objective_row();
+        para.update_objective_row(); //Necessary if all fixed_x != 0
         para
     }
     fn update_objective_row(&mut self) {
@@ -182,6 +203,12 @@ impl ParameterLP {
             total += self.optim_function[offset + self.fixed_x.len()]; //Constant term
             self.matrix_mut()[(0, col)] = total;
             col += 1;
+        }
+    }
+    fn update_fixed_x(&mut self) {
+        //Todo find heuristic
+        for i in 0..self.fixed_x.len() {
+            self.fixed_x[i] += 1;
         }
     }
     fn print_objective_fn(&self) {
@@ -205,6 +232,20 @@ impl Tableau for LP {
 
     fn matrix_mut(&mut self) -> &mut DMatrix<Rational64> {
         &mut self.matrix
+    }
+
+    fn solve(&mut self) {
+        println!("Starting Tableau: {}", self.matrix());
+
+        while self.pivot() {}
+
+        println!("Finished Tableau: {}", self.matrix());
+        let solution = self.read_solution();
+        print!("Solution: ");
+        for val in solution {
+            print!("{} ", val);
+        }
+        println!("\nObjective Function Value: {}", self.matrix()[(0, self.matrix().ncols() - 1)]);
     }
 
     fn pivot(&mut self) -> bool {
@@ -420,7 +461,9 @@ fn main() {
 
     println!("Starting Tableau: {}", table.matrix());
 
-    while table.pivot() {}
+    while table.pivot() {
+        println!("{}", table.matrix());
+    }
 
     println!("Finished Tableau: {}", table.matrix());
 //    let solution = table.read_solution();
