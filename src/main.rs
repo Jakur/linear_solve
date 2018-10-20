@@ -18,7 +18,47 @@ trait Tableau {
     fn matrix_mut(&mut self) -> &mut DMatrix<Rational64>;
     fn num_variables(&self) -> usize;
     fn solve(&mut self);
-    fn pivot(&mut self) -> bool;
+    fn pivot(&mut self) -> bool {
+        //Check optimal
+        if self.is_optimal() {
+            return false;
+        }
+        let pivot_col = self.choose_var();
+        let pivot_row = self.choose_row(pivot_col);
+
+        match pivot_row {
+            Some(r) => {
+                //Set the value of (pivot_row, pivot_col) to 1
+                let value = Ratio::one() / self.matrix()[(r, pivot_col)];
+                {
+                    let mut row = self.matrix_mut().row_mut(r);
+                    row *= value;
+                }
+                //Zero out the rest of the pivot_column with row operations using pivot_row
+                let mut row_vec = Vec::new();
+                for value in self.matrix().row(r).iter() {
+                    row_vec.push(value.clone());
+                }
+                let mut mat = self.matrix_mut();
+                for row_index in 0..mat.nrows() {
+                    let col_val = mat[(row_index, pivot_col)];
+                    if row_index != r && col_val != Ratio::zero() {
+                        let mut row_copy = DMatrix::from_row_slice(1, mat.ncols(),
+                                                                   &row_vec[..]);
+                        let mut row = mat.row_mut(row_index);
+                        let scaling = Ratio::from_integer(-1) * col_val;
+                        row_copy *= scaling;
+                        row += row_copy;
+                    }
+                }
+
+                return true
+            }
+            None => {
+                return false
+            }
+        }
+    }
     ///Choose the nonbasic variable that will have the best effect for optimization
     fn choose_var(&self) -> usize {
         let mut best_col = 0;
@@ -138,47 +178,6 @@ impl Tableau for ParameterLP {
             self.update_objective_row();
         }
     }
-    fn pivot(&mut self) -> bool {
-        //Check optimal
-        if self.is_optimal() {
-            return false;
-        }
-        let pivot_col = self.choose_var();
-        let pivot_row = self.choose_row(pivot_col);
-
-        match pivot_row {
-            Some(r) => {
-                //Set the value of (pivot_row, pivot_col) to 1
-                let value = Ratio::one() / self.matrix[(r, pivot_col)];
-                {
-                    let mut row = self.matrix.row_mut(r);
-                    row *= value;
-                }
-                //Zero out the rest of the pivot_column with row operations using pivot_row
-                let mut row_vec = Vec::new();
-                for value in self.matrix.row(r).iter() {
-                    row_vec.push(value.clone());
-                }
-                //Todo operations on variable objective function?
-                for row_index in 0..self.matrix.nrows() {
-                    let col_val = self.matrix[(row_index, pivot_col)];
-                    if row_index != r && col_val != Ratio::zero() {
-                        let mut row_copy = DMatrix::from_row_slice(1, self.matrix.ncols(),
-                                                                   &row_vec[..]);
-                        let mut row = self.matrix.row_mut(row_index);
-                        let scaling = Ratio::from_integer(-1) * col_val;
-                        row_copy *= scaling;
-                        row += row_copy;
-                    }
-                }
-
-                return true
-            }
-            None => {
-                return false
-            }
-        }
-    }
 }
 
 impl ParameterLP {
@@ -282,47 +281,6 @@ impl Tableau for LP {
             print!("{} ", val);
         }
         println!("\nObjective Function Value: {}", self.matrix()[(0, self.matrix().ncols() - 1)]);
-    }
-
-    fn pivot(&mut self) -> bool {
-        //Check optimal
-        if self.is_optimal() {
-            return false;
-        }
-        let pivot_col = self.choose_var();
-        let pivot_row = self.choose_row(pivot_col);
-
-        match pivot_row {
-            Some(r) => {
-                //Set the value of (pivot_row, pivot_col) to 1
-                let value = Ratio::one() / self.matrix[(r, pivot_col)];
-                {
-                    let mut row = self.matrix.row_mut(r);
-                    row *= value;
-                }
-                //Zero out the rest of the pivot_column with row operations using pivot_row
-                let mut row_vec = Vec::new();
-                for value in self.matrix.row(r).iter() {
-                    row_vec.push(value.clone());
-                }
-                for row_index in 0..self.matrix.nrows() {
-                    let col_val = self.matrix[(row_index, pivot_col)];
-                    if row_index != r && col_val != Ratio::zero() {
-                        let mut row_copy = DMatrix::from_row_slice(1, self.matrix.ncols(),
-                                                                   &row_vec[..]);
-                        let mut row = self.matrix.row_mut(row_index);
-                        let scaling = Ratio::from_integer(-1) * col_val;
-                        row_copy *= scaling;
-                        row += row_copy;
-                    }
-                }
-
-                return true
-            }
-            None => {
-                return false
-            }
-        }
     }
 }
 
