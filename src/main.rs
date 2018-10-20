@@ -165,12 +165,15 @@ impl Tableau for ParameterLP {
                 }
             }
             if !solutions.contains(&vec) {
-                print!("Solution vector: ");
+                print!("Solution vector (in X): ");
                 for x in vec.iter() {
                     print!("{} ", x);
                 }
-                println!();
-                println!("{}", self.matrix);
+                print!("\nSolution vector (in Lambda): ");
+                for y in lambda.iter() {
+                    print!("{} ", y);
+                }
+                println!("\n{}", self.matrix);
                 solutions.push(vec);
             }
             self.matrix = self.initial_condition.clone();
