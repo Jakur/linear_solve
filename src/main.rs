@@ -19,6 +19,31 @@ trait Tableau {
     fn matrix_mut(&mut self) -> &mut DMatrix<Rational64>;
     fn num_variables(&self) -> usize;
     fn solve(&mut self);
+    ///Eliminate on this column, making its value 1 and all other values in the column 0
+    fn eliminate(&mut self, row_index: usize, col_index: usize) {
+        //Set the value of (pivot_row, pivot_col) to 1
+        let value = Ratio::one() / self.matrix()[(row_index, col_index)];
+        {
+            let mut row = self.matrix_mut().row_mut(row_index);
+            row *= value;
+        }
+        let mut row_vec = Vec::new();
+        for value in self.matrix().row(row_index).iter() {
+            row_vec.push(value.clone());
+        }
+        let mat = self.matrix_mut();
+        for other_row in 0..mat.nrows() {
+            let col_val = mat[(other_row, col_index)];
+            if other_row != row_index && col_val != Ratio::zero() {
+                let mut row_copy = DMatrix::from_row_slice(1, mat.ncols(),
+                                                           &row_vec[..]);
+                let mut row = mat.row_mut(other_row);
+                let scaling = Ratio::from_integer(-1) * col_val;
+                row_copy *= scaling;
+                row += row_copy;
+            }
+        }
+    }
     fn pivot(&mut self) -> bool {
         //Check optimal
         if self.is_optimal() {
@@ -29,30 +54,8 @@ trait Tableau {
 
         match pivot_row {
             Some(r) => {
-                //Set the value of (pivot_row, pivot_col) to 1
-                let value = Ratio::one() / self.matrix()[(r, pivot_col)];
-                {
-                    let mut row = self.matrix_mut().row_mut(r);
-                    row *= value;
-                }
                 //Zero out the rest of the pivot_column with row operations using pivot_row
-                let mut row_vec = Vec::new();
-                for value in self.matrix().row(r).iter() {
-                    row_vec.push(value.clone());
-                }
-                let mut mat = self.matrix_mut();
-                for row_index in 0..mat.nrows() {
-                    let col_val = mat[(row_index, pivot_col)];
-                    if row_index != r && col_val != Ratio::zero() {
-                        let mut row_copy = DMatrix::from_row_slice(1, mat.ncols(),
-                                                                   &row_vec[..]);
-                        let mut row = mat.row_mut(row_index);
-                        let scaling = Ratio::from_integer(-1) * col_val;
-                        row_copy *= scaling;
-                        row += row_copy;
-                    }
-                }
-
+                self.eliminate(r, pivot_col);
                 return true
             }
             None => {
