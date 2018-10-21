@@ -9,8 +9,9 @@ use num_rational::Ratio;
 use nalgebra::DMatrix;
 
 enum TabularData {
-    LP(Vec<Rational64>, Vec<Vec<Rational64>>),
-    ParameterLP(usize, Vec<Rational64>, Vec<Vec<Rational64>>)
+    LP(Vec<Rational64>, Vec<Vec<Rational64>>, Vec<usize>), //Opt, Constraints, Equality Indices
+    //x_count, Opt, Constr, Eq Indices
+    ParameterLP(usize, Vec<Rational64>, Vec<Vec<Rational64>>, Vec<usize>),
 }
 
 trait Tableau {
@@ -136,7 +137,7 @@ struct ParameterLP {
     matrix: DMatrix<Rational64>,
     lambda_count: usize, //Index of the first slack column, also number of lambda
     fixed_x: Vec<Rational64>, //Fixed values of x for a single tableaux solution
-    optim_function: Vec<Rational64>,
+    optim_function: PolyVec,
     initial_condition: DMatrix<Rational64>,
 }
 
@@ -158,7 +159,7 @@ impl Tableau for ParameterLP {
             while self.pivot() {}
             let lambda = self.read_solution();
             let mut vec = vec![Ratio::zero(); self.fixed_x.len() + 1];
-            for (sl_index, slice) in self.optim_function
+            for (sl_index, slice) in self.optim_function.data
                 .chunks(self.fixed_x.len() + 1).enumerate() {
                 for (var_index, val) in slice.iter().enumerate() {
                     vec[var_index] += *val * lambda[sl_index];
@@ -216,11 +217,12 @@ impl ParameterLP {
             //println!("Optim of col: {}", optim[counter]);
             counter += x_count + 1;
         }
+        let opt = PolyVec::new(optim, fixed_x.len() + 1, cols);
         let mut para = ParameterLP {
             matrix: matrix.clone(),
             lambda_count: variables,
             fixed_x,
-            optim_function: optim,
+            optim_function: opt,
             initial_condition: matrix
         };
         para.update_objective_row(); //Necessary if all fixed_x != 0
@@ -232,9 +234,9 @@ impl ParameterLP {
             let mut total = Ratio::zero();
             let offset = col * (self.fixed_x.len() + 1);
             for index in 0..self.fixed_x.len() {
-                total += self.optim_function[offset+index] * self.fixed_x[index];
+                total += self.optim_function.data[offset+index] * self.fixed_x[index];
             }
-            total += self.optim_function[offset + self.fixed_x.len()]; //Constant term
+            total += self.optim_function.data[offset + self.fixed_x.len()]; //Constant term
             self.matrix_mut()[(0, col)] = total;
             col += 1;
         }
@@ -243,13 +245,6 @@ impl ParameterLP {
         //Todo find heuristic
         for i in 0..self.fixed_x.len() {
             self.fixed_x[i] += 1;
-        }
-    }
-    fn print_objective_fn(&self) {
-        let mut counter = 1;
-        for chunk in self.optim_function.chunks(self.fixed_x.len() + 1) {
-            println!("Lambda{} {:?}", counter, chunk);
-            counter += 1;
         }
     }
 }
@@ -377,7 +372,7 @@ fn parse_inequalities(text: &str) -> TabularData {
                 _ => None,
             }
         }).collect();
-        return TabularData::LP(opt, vec);
+        return TabularData::LP(opt, vec, Vec::new()); //Todo equals
     } else { //Parametrized LP
         let x_count = split[1].split_whitespace().count() - 1; //-1 for constant term
         let xs: Vec<_> = split.into_iter().map(|lambda| {
@@ -389,19 +384,50 @@ fn parse_inequalities(text: &str) -> TabularData {
             })
         }).flatten().collect();
         println!("X count: {}", x_count);
-        return TabularData::ParameterLP(x_count, xs, vec);
+        return TabularData::ParameterLP(x_count, xs, vec, Vec::new()); //Todo equals
     }
 }
 
 fn create_table(text: &str) -> Box<Tableau> {
     let parsed = parse_inequalities(text);
     match parsed {
-        TabularData::LP(opt, con) => {
+        TabularData::LP(opt, con, eq) => {
             Box::new(LP::new_standard(opt, con))
         }
-        TabularData::ParameterLP(x_count, var_opt, lambda_con) => {
+        TabularData::ParameterLP(x_count, var_opt, lambda_con, eq) => {
             Box::new(ParameterLP::new_standard(x_count, var_opt, lambda_con))
         }
+    }
+}
+
+struct PolyVec {
+    data: Vec<Rational64>,
+    poly_len: usize, //Number of terms in each polynomial
+    poly_count: usize, //Number of polynomials
+}
+
+impl PolyVec {
+    fn new(data: Vec<Rational64>, poly_len: usize, poly_count: usize) -> PolyVec {
+        PolyVec {
+            data,
+            poly_len,
+            poly_count
+        }
+    }
+    fn operate(&mut self, row: &DMatrix<Rational64>, multipliers: Vec<Rational64>) {
+        for (col, m) in multipliers.into_iter().enumerate() {
+            if m == Ratio::zero() {continue;}
+            let r = row * m;
+            for val in r.iter() {
+               for p_index in 0..self.poly_count {
+                   let index = self.index(p_index, col);
+                   self.data[index] += *val;
+               }
+            }
+        }
+    }
+    fn index(&self, poly_index: usize, col: usize) -> usize {
+        return poly_index * self.poly_len + col
     }
 }
 
