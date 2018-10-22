@@ -51,7 +51,8 @@ trait Tableau {
         }
         let pivot_col = self.choose_var();
         let pivot_row = self.choose_row(pivot_col);
-
+        println!("{}", self.matrix());
+        println!("Pivot row {:?}, Pivot_col {}", pivot_row, pivot_col);
         match pivot_row {
             Some(r) => {
                 //Zero out the rest of the pivot_column with row operations using pivot_row
@@ -67,8 +68,9 @@ trait Tableau {
     fn choose_var(&self) -> usize {
         let mut best_col = 0;
         let matrix = self.matrix();
-        for col in 0..matrix.ncols()-1 {
-            if matrix[(0, col)] < matrix[(0, best_col)] {
+        //println!("Art cols: {:?}", self.artificial_cols());
+        for col in 0..matrix.ncols()-2 {
+            if matrix[(0, col)] < matrix[(0, best_col)] && !self.artificial_cols()[col] {
                 best_col = col;
             }
         }
@@ -79,7 +81,7 @@ trait Tableau {
         let mut pivot_row = None;
         let mut candidate_ratio: Rational64 = Ratio::zero(); //Placeholder until set
         //Find the best ratio for the pivot column
-        for index in 1..matrix.nrows() {
+        for index in 1..matrix.nrows()-1 {
             let pivot_value = matrix[(index, pivot_col)];
             if pivot_value > Ratio::zero() {
                 let ratio = matrix[(index, matrix.ncols()-1)] / pivot_value;
@@ -101,12 +103,87 @@ trait Tableau {
     }
     fn is_optimal(&self) -> bool {
         let matrix = self.matrix();
-        for col in 0..matrix.ncols()-1 {
-            if matrix[(0, col)] < Ratio::zero() {
+        for col in 0..matrix.ncols() - 2 {
+            if matrix[(0, col)] < Ratio::zero() && !self.artificial_cols()[col] {
                 return false;
             }
         }
         return true;
+    }
+    ///Try to eliminate artificial variables to get a feasible initial tableau.
+    fn artificial_solve(&mut self, artificial_cols: Vec<usize>) -> bool {
+        println!("Artificial solve: ");
+        println!("{:?}", artificial_cols);
+        let nrows = self.matrix().nrows();
+        let ncols = self.matrix().ncols();
+        for col in artificial_cols {
+            println!("{}", self.matrix());
+            let row = col - self.num_variables() + 1; //Todo verify this
+            println!("Row: {} Col: {}", row, col);
+            self.eliminate(row, col);
+        }
+        //Eliminate a_0, isolating it on the row with the most negative slack
+        let mut best_row = None;
+        for row in 1..nrows - 1 {
+            if self.matrix()[(row, ncols - 2)] == Ratio::from_integer(-1) {
+                match best_row {
+                    Some(b) => {
+                        if self.matrix()[(row, ncols-1)] < self.matrix()[(b, ncols-1)] {
+                            best_row = Some(row);
+                        }
+                    },
+                    None => {best_row = Some(row);}
+                }
+            }
+        }
+        println!("{}", self.matrix());
+        match best_row {
+            Some(row) => {
+                self.eliminate(row, ncols - 2);
+            }
+            None => {} //No a_0 to eliminate
+        }
+        //Find optimality for the bottom row--the w row
+        while self.matrix()[(nrows-1, ncols-1)] < Ratio::zero() {
+            println!("{}", self.matrix());
+            let mut best_col = None;
+            for col in 1..ncols - 1 {
+                match best_col {
+                    Some(b) => {
+                        if self.matrix()[(nrows-1, col)] < self.matrix()[(nrows-1, b)] {
+                            best_col = Some(col);
+                        }
+                    }
+                    None => {best_col = Some(col);}
+                }
+            }
+            match best_col {
+                Some(best_col) => {
+                    if self.matrix()[(nrows-1, best_col)] < Ratio::zero() {
+                        let row = self.choose_row(best_col);
+                        if let Some(best_row) = row {
+                            self.eliminate(best_row, best_col);
+                        } else {
+                            if self.matrix()[(nrows-1, ncols-1)] < Ratio::zero() {
+                                return false; //Infeasible
+                            } else {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                None => {
+                    if self.matrix()[(nrows-1, ncols-1)] < Ratio::zero() {
+                        return false; //Infeasible
+                    } else {
+                        return true;
+                    }
+                }
+            }
+            println!("Hello world");
+        }
+        println!("{}", self.matrix());
+        true
     }
     ///Find and return the optimal values of the true variables
     fn read_solution(&self) -> Vec<Rational64> {
@@ -134,6 +211,7 @@ trait Tableau {
         }
         return values;
     }
+    fn artificial_cols(&self) -> &Vec<bool>;
 }
 
 struct ParameterLP {
@@ -184,6 +262,9 @@ impl Tableau for ParameterLP {
             self.update_fixed_x();
             self.update_objective_row();
         }
+    }
+    fn artificial_cols(&self) -> &Vec<bool> {
+        unimplemented!()
     }
 }
 
@@ -254,6 +335,8 @@ impl ParameterLP {
 
 struct LP {
     matrix: DMatrix<Rational64>,
+    optim: Vec<Rational64>,
+    artificial: Vec<bool>,
     variables: usize, //Number of non-slack variables
 }
 
@@ -283,16 +366,35 @@ impl Tableau for LP {
         }
         println!("\nObjective Function Value: {}", self.matrix()[(0, self.matrix().ncols() - 1)]);
     }
+    fn artificial_cols(&self) -> &Vec<bool> {
+        &self.artificial
+    }
 }
 
 
 impl LP {
     ///Creates a tableaux from a vector of inequalities in the standard form
-    fn new_standard(optim: Vec<Rational64>, constraints: Vec<Vec<Rational64>>) -> LP {
+    fn new_standard(optim: Vec<Rational64>, constraints: Vec<Vec<Rational64>>,
+                    equals: Vec<usize>) -> LP {
         let variables = constraints[0].len() - 1;
         let rows = constraints.len() + 1;
-        let cols = constraints.len() + 1 + variables;
-        let mut matrix = DMatrix::from_element(rows, cols, Ratio::zero());
+        let cols = constraints.len() + 2 + variables;
+        let mut art = vec![false; cols];
+        let mut phase_flag = {
+            if equals.len() == 0 {
+                false
+            } else {
+                true
+            }
+        };
+        let mut art_cols = Vec::new();
+        for r in equals.iter() {
+            let col = variables + *r;
+            art[col] = true;
+            art_cols.push(col);
+        }
+        //Penultimate column special a_0, for correcting negative inequalities
+        let mut matrix = DMatrix::from_element(rows+1, cols, Ratio::zero());
         //Init optimization row
         for i in 0..optim.len() {
             matrix[(0, i)] = optim[i];
@@ -305,17 +407,41 @@ impl LP {
         }
         let mut row = 1;
         //Init slack variables
-        for col in variables..cols-1 {
+        for col in variables..cols-2 {
             matrix[(row, col)] = Ratio::one();
             row += 1;
+            if art[col] {
+                matrix[(rows, col)] = Ratio::one();
+            }
         }
         //Init row values
+        let mut slack_col = variables;
         for r in 1..rows {
             matrix[(r, cols-1)] = constraints[r-1][variables];
+            if !art[slack_col] { //If not an equality constraint
+                if matrix[(r, cols-1)] < Ratio::zero() { //If negative rhs
+                    matrix[(r, cols-2)] = Ratio::from_integer(-1); //init a_0 value
+                    matrix[(rows, cols-2)] = Ratio::one();
+                    phase_flag = true;
+                }
+            }
+            slack_col += 1;
         }
-        LP {
+        let mut lp = LP {
             matrix,
+            optim,
+            artificial: art,
             variables,
+        };
+        if !phase_flag { //No constraints we need to manage, should be feasible
+            //Init optimization row
+            for i in 0..lp.optim.len() {
+                lp.matrix[(0, i)] = lp.optim[i];
+            }
+            return lp;
+        } else {
+            println!("{}", lp.artificial_solve(art_cols));
+            return lp;
         }
     }
     ///Creates a Tableau from a single slice representing a standard LP
@@ -324,6 +450,8 @@ impl LP {
         let table = LP {
             matrix: DMatrix::from_iterator(n, m, slice.iter()
                 .map(|n| Ratio::from_integer(*n))),
+            optim: Vec::new(),
+            artificial: Vec::new(),
             variables: 2,
         };
         table
@@ -361,11 +489,15 @@ fn parse_inequalities(text: &str) -> TabularData {
             vec[index][i] *= -1;
         }
     }
-    //Add the -1 * row to the tableaux to represent row >= x and row <= x
-    for index in equals.into_iter() {
-        let opposite: Vec<_> = vec[index].iter()
-            .map(|num| Ratio::from_integer(-1) * num).collect();
-        vec.push(opposite);
+    //Make the rhs of all equality constraints nonnegative
+    for index in equals.iter() {
+        let index = *index;
+        let length = vec[index].len();
+        if vec[index][length-1] < Ratio::zero() {
+            let opposite: Vec<_> = vec[index].iter()
+                .map(|num| Ratio::from_integer(-1) * num).collect();
+            vec[index] = opposite;
+        }
     }
     if split.len() == 1 { //Normal LP
         let opt = split[0].split_whitespace().filter_map(|x| {
@@ -375,7 +507,7 @@ fn parse_inequalities(text: &str) -> TabularData {
                 _ => None,
             }
         }).collect();
-        return TabularData::LP(opt, vec, Vec::new()); //Todo equals
+        return TabularData::LP(opt, vec, equals); //Todo equals
     } else { //Parametrized LP
         let x_count = split[1].split_whitespace().count() - 1; //-1 for constant term
         let xs: Vec<_> = split.into_iter().map(|lambda| {
@@ -395,7 +527,7 @@ fn create_table(text: &str) -> Box<Tableau> {
     let parsed = parse_inequalities(text);
     match parsed {
         TabularData::LP(opt, con, eq) => {
-            Box::new(LP::new_standard(opt, con))
+            Box::new(LP::new_standard(opt, con, eq))
         }
         TabularData::ParameterLP(x_count, var_opt, lambda_con, eq) => {
             Box::new(ParameterLP::new_standard(x_count, var_opt, lambda_con))
