@@ -117,9 +117,9 @@ trait Tableau {
         let nrows = self.matrix().nrows();
         let ncols = self.matrix().ncols();
         for col in artificial_cols {
-            println!("{}", self.matrix());
+            //println!("{}", self.matrix());
             let row = col - self.num_variables() + 1; //Todo verify this
-            println!("Row: {} Col: {}", row, col);
+            //println!("Row: {} Col: {}", row, col);
             self.eliminate(row, col);
         }
         //Eliminate a_0, isolating it on the row with the most negative slack
@@ -136,7 +136,7 @@ trait Tableau {
                 }
             }
         }
-        println!("{}", self.matrix());
+        //println!("{}", self.matrix());
         match best_row {
             Some(row) => {
                 self.eliminate(row, ncols - 2);
@@ -145,7 +145,7 @@ trait Tableau {
         }
         //Find optimality for the bottom row--the w row
         while self.matrix()[(nrows-1, ncols-1)] < Ratio::zero() {
-            println!("{}", self.matrix());
+            //println!("{}", self.matrix());
             let mut best_col = None;
             for col in 1..ncols - 1 {
                 match best_col {
@@ -180,9 +180,8 @@ trait Tableau {
                     }
                 }
             }
-            println!("Hello world");
         }
-        println!("{}", self.matrix());
+        //println!("{}", self.matrix());
         true
     }
     ///Find and return the optimal values of the true variables
@@ -220,6 +219,7 @@ struct ParameterLP {
     fixed_x: Vec<Rational64>, //Fixed values of x for a single tableaux solution
     optim_function: PolyVec,
     initial_condition: DMatrix<Rational64>,
+    artificial: Vec<bool>,
 }
 
 impl Tableau for ParameterLP {
@@ -233,10 +233,32 @@ impl Tableau for ParameterLP {
     fn num_variables(&self) -> usize {
         self.lambda_count
     }
-    fn solve(&mut self, phase_one: bool) -> bool {
+    fn solve(&mut self, mut phase_one: bool) -> bool {
         let num_solutions = 2; //Todo compute this, or find other halting condition
         let mut solutions = Vec::new();
         while solutions.len() < num_solutions {
+            println!("X: {:?}", self.fixed_x);
+            if phase_one {
+                println!("Initiating Phase I to reach a feasible starting point");
+                let artificial_cols = self.artificial.iter().enumerate()
+                    .filter_map(|(index, b)| {
+                        if *b {
+                            Some(index)
+                        } else {
+                            None
+                        }
+                    }).collect();
+                if self.artificial_solve(artificial_cols) {
+                    println!("Phase I successful beginning Simplex method proper with:\n{}",
+                             self.matrix);
+                } else {
+                    println!("Unable to find a feasible solution under these X.");
+                    self.matrix = self.initial_condition.clone();
+                    self.update_fixed_x();
+                    self.update_objective_row();
+                    continue;
+                }
+            }
             while self.pivot() {}
             let lambda = self.read_solution();
             let mut vec = vec![Ratio::zero(); self.fixed_x.len() + 1];
@@ -265,53 +287,36 @@ impl Tableau for ParameterLP {
         return true
     }
     fn artificial_cols(&self) -> &Vec<bool> {
-        unimplemented!()
+        &self.artificial
     }
 }
 
 impl ParameterLP {
-    fn new_standard(x_count: usize, optim: Vec<Rational64>,
-                    constraints: Vec<Vec<Rational64>>) -> ParameterLP {
-        let variables = constraints[0].len() - 1;
-        let rows = constraints.len() + 1;
-        let cols = constraints.len() + 1 + variables;
-        let mut matrix = DMatrix::from_element(rows, cols, Ratio::zero());
-        //Init variable columns
-        for i in 1..rows {
-            for j in 0..variables {
-                matrix[(i, j)] = constraints[i-1][j];
-            }
-        }
-        let mut row = 1;
-        //Init slack variables
-        for col in variables..cols-1 {
-            matrix[(row, col)] = Ratio::one();
-            row += 1;
-        }
-        //Init row values
-        for r in 1..rows {
-            matrix[(r, cols-1)] = constraints[r-1][variables];
-        }
+    fn new_standard(x_count: usize, optim: Vec<Rational64>, constraints: Vec<Vec<Rational64>>,
+                    equal_rows: Vec<usize>) -> (ParameterLP, bool) {
         //Fix all x initially to zero
+        let variables = constraints[0].len() - 1;
         let fixed_x = vec![Ratio::from_integer(0); x_count]; //Todo fix this
-
         let mut counter = x_count;
-        //println!("{:?}", optim);
-        for col in 0..variables {
-            matrix[(0, col)] = optim[counter];
-            //println!("Optim of col: {}", optim[counter]);
+        let mut init_optim = Vec::new();
+        for _ in 0..variables {
+            init_optim.push(optim[counter]);
             counter += x_count + 1;
         }
-        let opt = PolyVec::new(optim, fixed_x.len() + 1, cols);
+        let (matrix, artificial, phase_one) = matrix_init(&init_optim,
+                                                          &constraints, &equal_rows);
+
+        let opt = PolyVec::new(optim, fixed_x.len() + 1, variables);
         let mut para = ParameterLP {
             matrix: matrix.clone(),
             lambda_count: variables,
             fixed_x,
             optim_function: opt,
-            initial_condition: matrix
+            initial_condition: matrix,
+            artificial,
         };
         para.update_objective_row(); //Necessary if all fixed_x != 0
-        para
+        (para, phase_one)
     }
     fn update_objective_row(&mut self) {
         let mut col = 0;
@@ -468,7 +473,7 @@ fn parse_inequalities(text: &str) -> TabularData {
                 _ => None,
             }
         }).collect();
-        return TabularData::LP(opt, vec, equals); //Todo equals
+        return TabularData::LP(opt, vec, equals);
     } else { //Parametrized LP
         let x_count = split[1].split_whitespace().count() - 1; //-1 for constant term
         let xs: Vec<_> = split.into_iter().map(|lambda| {
@@ -480,7 +485,7 @@ fn parse_inequalities(text: &str) -> TabularData {
             })
         }).flatten().collect();
         println!("X count: {}", x_count);
-        return TabularData::ParameterLP(x_count, xs, vec, Vec::new()); //Todo equals
+        return TabularData::ParameterLP(x_count, xs, vec, equals);
     }
 }
 
@@ -492,7 +497,8 @@ fn create_table(text: &str) -> (Box<Tableau>, bool) {
             (Box::new(lp), phase_one)
         }
         TabularData::ParameterLP(x_count, var_opt, lambda_con, eq) => {
-            (Box::new(ParameterLP::new_standard(x_count, var_opt, lambda_con)), false) //Todo fix
+            let (plp, phase_one) = ParameterLP::new_standard(x_count, var_opt, lambda_con, eq);
+            (Box::new(plp), phase_one)
         }
     }
 }
