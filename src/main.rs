@@ -9,22 +9,68 @@ use num_rational::Ratio;
 use nalgebra::DMatrix;
 
 enum TabularData {
-    LP(Vec<Rational64>, Vec<Vec<Rational64>>),
-    ParameterLP(usize, Vec<Rational64>, Vec<Vec<Rational64>>)
+    LP(Vec<Rational64>, Vec<Vec<Rational64>>, Vec<usize>), //Opt, Constraints, Equality Indices
+    //x_count, Opt, Constr, Eq Indices
+    ParameterLP(usize, Vec<Rational64>, Vec<Vec<Rational64>>, Vec<usize>),
 }
 
 trait Tableau {
     fn matrix(&self) -> &DMatrix<Rational64>;
     fn matrix_mut(&mut self) -> &mut DMatrix<Rational64>;
     fn num_variables(&self) -> usize;
-    fn solve(&mut self);
-    fn pivot(&mut self) -> bool;
+    fn solve(&mut self, phase_one: bool) -> bool;
+    ///Eliminate on this column, making its value 1 and all other values in the column 0
+    fn eliminate(&mut self, row_index: usize, col_index: usize) {
+        //Set the value of (pivot_row, pivot_col) to 1
+        let value = Ratio::one() / self.matrix()[(row_index, col_index)];
+        {
+            let mut row = self.matrix_mut().row_mut(row_index);
+            row *= value;
+        }
+        let mut row_vec = Vec::new();
+        for value in self.matrix().row(row_index).iter() {
+            row_vec.push(value.clone());
+        }
+        let mat = self.matrix_mut();
+        for other_row in 0..mat.nrows() {
+            let col_val = mat[(other_row, col_index)];
+            if other_row != row_index && col_val != Ratio::zero() {
+                let mut row_copy = DMatrix::from_row_slice(1, mat.ncols(),
+                                                           &row_vec[..]);
+                let mut row = mat.row_mut(other_row);
+                let scaling = Ratio::from_integer(-1) * col_val;
+                row_copy *= scaling;
+                row += row_copy;
+            }
+        }
+    }
+    fn pivot(&mut self) -> bool {
+        //Check optimal
+        if self.is_optimal() {
+            return false;
+        }
+        let pivot_col = self.choose_var();
+        let pivot_row = self.choose_row(pivot_col);
+        println!("{}", self.matrix());
+        println!("Pivot row {:?}, Pivot_col {}", pivot_row, pivot_col);
+        match pivot_row {
+            Some(r) => {
+                //Zero out the rest of the pivot_column with row operations using pivot_row
+                self.eliminate(r, pivot_col);
+                return true
+            }
+            None => {
+                return false
+            }
+        }
+    }
     ///Choose the nonbasic variable that will have the best effect for optimization
     fn choose_var(&self) -> usize {
         let mut best_col = 0;
         let matrix = self.matrix();
-        for col in 0..matrix.ncols()-1 {
-            if matrix[(0, col)] < matrix[(0, best_col)] {
+        //println!("Art cols: {:?}", self.artificial_cols());
+        for col in 0..matrix.ncols()-2 {
+            if matrix[(0, col)] < matrix[(0, best_col)] && !self.artificial_cols()[col] {
                 best_col = col;
             }
         }
@@ -35,7 +81,7 @@ trait Tableau {
         let mut pivot_row = None;
         let mut candidate_ratio: Rational64 = Ratio::zero(); //Placeholder until set
         //Find the best ratio for the pivot column
-        for index in 1..matrix.nrows() {
+        for index in 1..matrix.nrows()-1 {
             let pivot_value = matrix[(index, pivot_col)];
             if pivot_value > Ratio::zero() {
                 let ratio = matrix[(index, matrix.ncols()-1)] / pivot_value;
@@ -57,12 +103,86 @@ trait Tableau {
     }
     fn is_optimal(&self) -> bool {
         let matrix = self.matrix();
-        for col in 0..matrix.ncols()-1 {
-            if matrix[(0, col)] < Ratio::zero() {
+        for col in 0..matrix.ncols() - 2 {
+            if matrix[(0, col)] < Ratio::zero() && !self.artificial_cols()[col] {
                 return false;
             }
         }
         return true;
+    }
+    ///Try to eliminate artificial variables to get a feasible initial tableau.
+    fn artificial_solve(&mut self, artificial_cols: Vec<usize>) -> bool {
+        println!("Artificial solve: ");
+        println!("{:?}", artificial_cols);
+        let nrows = self.matrix().nrows();
+        let ncols = self.matrix().ncols();
+        for col in artificial_cols {
+            //println!("{}", self.matrix());
+            let row = col - self.num_variables() + 1; //Todo verify this
+            //println!("Row: {} Col: {}", row, col);
+            self.eliminate(row, col);
+        }
+        //Eliminate a_0, isolating it on the row with the most negative slack
+        let mut best_row = None;
+        for row in 1..nrows - 1 {
+            if self.matrix()[(row, ncols - 2)] == Ratio::from_integer(-1) {
+                match best_row {
+                    Some(b) => {
+                        if self.matrix()[(row, ncols-1)] < self.matrix()[(b, ncols-1)] {
+                            best_row = Some(row);
+                        }
+                    },
+                    None => {best_row = Some(row);}
+                }
+            }
+        }
+        //println!("{}", self.matrix());
+        match best_row {
+            Some(row) => {
+                self.eliminate(row, ncols - 2);
+            }
+            None => {} //No a_0 to eliminate
+        }
+        //Find optimality for the bottom row--the w row
+        while self.matrix()[(nrows-1, ncols-1)] < Ratio::zero() {
+            //println!("{}", self.matrix());
+            let mut best_col = None;
+            for col in 1..ncols - 1 {
+                match best_col {
+                    Some(b) => {
+                        if self.matrix()[(nrows-1, col)] < self.matrix()[(nrows-1, b)] {
+                            best_col = Some(col);
+                        }
+                    }
+                    None => {best_col = Some(col);}
+                }
+            }
+            match best_col {
+                Some(best_col) => {
+                    if self.matrix()[(nrows-1, best_col)] < Ratio::zero() {
+                        let row = self.choose_row(best_col);
+                        if let Some(best_row) = row {
+                            self.eliminate(best_row, best_col);
+                        } else {
+                            if self.matrix()[(nrows-1, ncols-1)] < Ratio::zero() {
+                                return false; //Infeasible
+                            } else {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                None => {
+                    if self.matrix()[(nrows-1, ncols-1)] < Ratio::zero() {
+                        return false; //Infeasible
+                    } else {
+                        return true;
+                    }
+                }
+            }
+        }
+        //println!("{}", self.matrix());
+        true
     }
     ///Find and return the optimal values of the true variables
     fn read_solution(&self) -> Vec<Rational64> {
@@ -90,14 +210,16 @@ trait Tableau {
         }
         return values;
     }
+    fn artificial_cols(&self) -> &Vec<bool>;
 }
 
 struct ParameterLP {
     matrix: DMatrix<Rational64>,
     lambda_count: usize, //Index of the first slack column, also number of lambda
     fixed_x: Vec<Rational64>, //Fixed values of x for a single tableaux solution
-    optim_function: Vec<Rational64>,
+    optim_function: PolyVec,
     initial_condition: DMatrix<Rational64>,
+    artificial: Vec<bool>,
 }
 
 impl Tableau for ParameterLP {
@@ -111,118 +233,90 @@ impl Tableau for ParameterLP {
     fn num_variables(&self) -> usize {
         self.lambda_count
     }
-    fn solve(&mut self) {
+    fn solve(&mut self, mut phase_one: bool) -> bool {
         let num_solutions = 2; //Todo compute this, or find other halting condition
         let mut solutions = Vec::new();
         while solutions.len() < num_solutions {
+            println!("X: {:?}", self.fixed_x);
+            if phase_one {
+                println!("Initiating Phase I to reach a feasible starting point");
+                let artificial_cols = self.artificial.iter().enumerate()
+                    .filter_map(|(index, b)| {
+                        if *b {
+                            Some(index)
+                        } else {
+                            None
+                        }
+                    }).collect();
+                if self.artificial_solve(artificial_cols) {
+                    println!("Phase I successful beginning Simplex method proper with:\n{}",
+                             self.matrix);
+                } else {
+                    println!("Unable to find a feasible solution under these X.");
+                    self.matrix = self.initial_condition.clone();
+                    self.update_fixed_x();
+                    self.update_objective_row();
+                    continue;
+                }
+            }
             while self.pivot() {}
             let lambda = self.read_solution();
             let mut vec = vec![Ratio::zero(); self.fixed_x.len() + 1];
-            for (sl_index, slice) in self.optim_function
+            for (sl_index, slice) in self.optim_function.data
                 .chunks(self.fixed_x.len() + 1).enumerate() {
                 for (var_index, val) in slice.iter().enumerate() {
                     vec[var_index] += *val * lambda[sl_index];
                 }
             }
             if !solutions.contains(&vec) {
-                print!("Solution vector: ");
+                print!("Solution vector (in X): ");
                 for x in vec.iter() {
                     print!("{} ", x);
                 }
-                println!();
-                println!("{}", self.matrix);
+                print!("\nSolution vector (in Lambda): ");
+                for y in lambda.iter() {
+                    print!("{} ", y);
+                }
+                println!("\n{}", self.matrix);
                 solutions.push(vec);
             }
             self.matrix = self.initial_condition.clone();
             self.update_fixed_x();
             self.update_objective_row();
         }
+        return true
     }
-    fn pivot(&mut self) -> bool {
-        //Check optimal
-        if self.is_optimal() {
-            return false;
-        }
-        let pivot_col = self.choose_var();
-        let pivot_row = self.choose_row(pivot_col);
-
-        match pivot_row {
-            Some(r) => {
-                //Set the value of (pivot_row, pivot_col) to 1
-                let value = Ratio::one() / self.matrix[(r, pivot_col)];
-                {
-                    let mut row = self.matrix.row_mut(r);
-                    row *= value;
-                }
-                //Zero out the rest of the pivot_column with row operations using pivot_row
-                let mut row_vec = Vec::new();
-                for value in self.matrix.row(r).iter() {
-                    row_vec.push(value.clone());
-                }
-                //Todo operations on variable objective function?
-                for row_index in 0..self.matrix.nrows() {
-                    let col_val = self.matrix[(row_index, pivot_col)];
-                    if row_index != r && col_val != Ratio::zero() {
-                        let mut row_copy = DMatrix::from_row_slice(1, self.matrix.ncols(),
-                                                                   &row_vec[..]);
-                        let mut row = self.matrix.row_mut(row_index);
-                        let scaling = Ratio::from_integer(-1) * col_val;
-                        row_copy *= scaling;
-                        row += row_copy;
-                    }
-                }
-
-                return true
-            }
-            None => {
-                return false
-            }
-        }
+    fn artificial_cols(&self) -> &Vec<bool> {
+        &self.artificial
     }
 }
 
 impl ParameterLP {
-    fn new_standard(x_count: usize, optim: Vec<Rational64>,
-                    constraints: Vec<Vec<Rational64>>) -> ParameterLP {
-        let variables = constraints[0].len() - 1;
-        let rows = constraints.len() + 1;
-        let cols = constraints.len() + 1 + variables;
-        let mut matrix = DMatrix::from_element(rows, cols, Ratio::zero());
-        //Init variable columns
-        for i in 1..rows {
-            for j in 0..variables {
-                matrix[(i, j)] = constraints[i-1][j];
-            }
-        }
-        let mut row = 1;
-        //Init slack variables
-        for col in variables..cols-1 {
-            matrix[(row, col)] = Ratio::one();
-            row += 1;
-        }
-        //Init row values
-        for r in 1..rows {
-            matrix[(r, cols-1)] = constraints[r-1][variables];
-        }
+    fn new_standard(x_count: usize, optim: Vec<Rational64>, constraints: Vec<Vec<Rational64>>,
+                    equal_rows: Vec<usize>) -> (ParameterLP, bool) {
         //Fix all x initially to zero
+        let variables = constraints[0].len() - 1;
         let fixed_x = vec![Ratio::from_integer(0); x_count]; //Todo fix this
-
         let mut counter = x_count;
-        //println!("{:?}", optim);
-        for col in 0..variables {
-            matrix[(0, col)] = optim[counter];
-            //println!("Optim of col: {}", optim[counter]);
+        let mut init_optim = Vec::new();
+        for _ in 0..variables {
+            init_optim.push(optim[counter]);
             counter += x_count + 1;
         }
+        let (matrix, artificial, phase_one) = matrix_init(&init_optim,
+                                                          &constraints, &equal_rows);
+
+        let opt = PolyVec::new(optim, fixed_x.len() + 1, variables);
         let mut para = ParameterLP {
             matrix: matrix.clone(),
             lambda_count: variables,
             fixed_x,
-            optim_function: optim,
-            initial_condition: matrix
+            optim_function: opt,
+            initial_condition: matrix,
+            artificial,
         };
         para.update_objective_row(); //Necessary if all fixed_x != 0
-        para
+        (para, phase_one)
     }
     fn update_objective_row(&mut self) {
         let mut col = 0;
@@ -230,9 +324,9 @@ impl ParameterLP {
             let mut total = Ratio::zero();
             let offset = col * (self.fixed_x.len() + 1);
             for index in 0..self.fixed_x.len() {
-                total += self.optim_function[offset+index] * self.fixed_x[index];
+                total += self.optim_function.data[offset+index] * self.fixed_x[index];
             }
-            total += self.optim_function[offset + self.fixed_x.len()]; //Constant term
+            total += self.optim_function.data[offset + self.fixed_x.len()]; //Constant term
             self.matrix_mut()[(0, col)] = total;
             col += 1;
         }
@@ -243,17 +337,12 @@ impl ParameterLP {
             self.fixed_x[i] += 1;
         }
     }
-    fn print_objective_fn(&self) {
-        let mut counter = 1;
-        for chunk in self.optim_function.chunks(self.fixed_x.len() + 1) {
-            println!("Lambda{} {:?}", counter, chunk);
-            counter += 1;
-        }
-    }
 }
 
 struct LP {
     matrix: DMatrix<Rational64>,
+    optim: Vec<Rational64>,
+    artificial: Vec<bool>,
     variables: usize, //Number of non-slack variables
 }
 
@@ -270,7 +359,24 @@ impl Tableau for LP {
         self.variables
     }
 
-    fn solve(&mut self) {
+    fn solve(&mut self, phase_one: bool) -> bool {
+        if phase_one {
+            println!("Initiating Phase I to reach a feasible starting point");
+            let artificial_cols = self.artificial.iter().enumerate()
+                .filter_map(|(index, b)| {
+                if *b {
+                    Some(index)
+                } else {
+                    None
+                }
+            }).collect();
+            if self.artificial_solve(artificial_cols) {
+                println!("Phase I successful beginning Simplex method proper");
+            } else {
+                println!("Unable to find a feasible solution.");
+                return false
+            }
+        }
         println!("Starting Tableau: {}", self.matrix());
 
         while self.pivot() {}
@@ -282,82 +388,27 @@ impl Tableau for LP {
             print!("{} ", val);
         }
         println!("\nObjective Function Value: {}", self.matrix()[(0, self.matrix().ncols() - 1)]);
+        return true
     }
-
-    fn pivot(&mut self) -> bool {
-        //Check optimal
-        if self.is_optimal() {
-            return false;
-        }
-        let pivot_col = self.choose_var();
-        let pivot_row = self.choose_row(pivot_col);
-
-        match pivot_row {
-            Some(r) => {
-                //Set the value of (pivot_row, pivot_col) to 1
-                let value = Ratio::one() / self.matrix[(r, pivot_col)];
-                {
-                    let mut row = self.matrix.row_mut(r);
-                    row *= value;
-                }
-                //Zero out the rest of the pivot_column with row operations using pivot_row
-                let mut row_vec = Vec::new();
-                for value in self.matrix.row(r).iter() {
-                    row_vec.push(value.clone());
-                }
-                for row_index in 0..self.matrix.nrows() {
-                    let col_val = self.matrix[(row_index, pivot_col)];
-                    if row_index != r && col_val != Ratio::zero() {
-                        let mut row_copy = DMatrix::from_row_slice(1, self.matrix.ncols(),
-                                                                   &row_vec[..]);
-                        let mut row = self.matrix.row_mut(row_index);
-                        let scaling = Ratio::from_integer(-1) * col_val;
-                        row_copy *= scaling;
-                        row += row_copy;
-                    }
-                }
-
-                return true
-            }
-            None => {
-                return false
-            }
-        }
+    fn artificial_cols(&self) -> &Vec<bool> {
+        &self.artificial
     }
 }
 
 
 impl LP {
     ///Creates a tableaux from a vector of inequalities in the standard form
-    fn new_standard(optim: Vec<Rational64>, constraints: Vec<Vec<Rational64>>) -> LP {
+    fn new_standard(optim: Vec<Rational64>, constraints: Vec<Vec<Rational64>>,
+                    equals: Vec<usize>) -> (LP, bool) {
         let variables = constraints[0].len() - 1;
-        let rows = constraints.len() + 1;
-        let cols = constraints.len() + 1 + variables;
-        let mut matrix = DMatrix::from_element(rows, cols, Ratio::zero());
-        //Init optimization row
-        for i in 0..optim.len() {
-            matrix[(0, i)] = optim[i];
-        }
-        //Init variable columns
-        for i in 1..rows {
-            for j in 0..variables {
-                matrix[(i, j)] = constraints[i-1][j];
-            }
-        }
-        let mut row = 1;
-        //Init slack variables
-        for col in variables..cols-1 {
-            matrix[(row, col)] = Ratio::one();
-            row += 1;
-        }
-        //Init row values
-        for r in 1..rows {
-            matrix[(r, cols-1)] = constraints[r-1][variables];
-        }
-        LP {
+        let (matrix, art, phase_flag) = matrix_init(&optim, &constraints, &equals);
+        let mut lp = LP {
             matrix,
+            optim,
+            artificial: art,
             variables,
-        }
+        };
+        return (lp, phase_flag);
     }
     ///Creates a Tableau from a single slice representing a standard LP
     fn new_from_tabular(n: usize, m: usize, slice: &[i64]) -> LP {
@@ -365,6 +416,8 @@ impl LP {
         let table = LP {
             matrix: DMatrix::from_iterator(n, m, slice.iter()
                 .map(|n| Ratio::from_integer(*n))),
+            optim: Vec::new(),
+            artificial: Vec::new(),
             variables: 2,
         };
         table
@@ -402,11 +455,15 @@ fn parse_inequalities(text: &str) -> TabularData {
             vec[index][i] *= -1;
         }
     }
-    //Add the -1 * row to the tableaux to represent row >= x and row <= x
-    for index in equals.into_iter() {
-        let opposite: Vec<_> = vec[index].iter()
-            .map(|num| Ratio::from_integer(-1) * num).collect();
-        vec.push(opposite);
+    //Make the rhs of all equality constraints nonnegative
+    for index in equals.iter() {
+        let index = *index;
+        let length = vec[index].len();
+        if vec[index][length-1] < Ratio::zero() {
+            let opposite: Vec<_> = vec[index].iter()
+                .map(|num| Ratio::from_integer(-1) * num).collect();
+            vec[index] = opposite;
+        }
     }
     if split.len() == 1 { //Normal LP
         let opt = split[0].split_whitespace().filter_map(|x| {
@@ -416,7 +473,7 @@ fn parse_inequalities(text: &str) -> TabularData {
                 _ => None,
             }
         }).collect();
-        return TabularData::LP(opt, vec);
+        return TabularData::LP(opt, vec, equals);
     } else { //Parametrized LP
         let x_count = split[1].split_whitespace().count() - 1; //-1 for constant term
         let xs: Vec<_> = split.into_iter().map(|lambda| {
@@ -428,19 +485,114 @@ fn parse_inequalities(text: &str) -> TabularData {
             })
         }).flatten().collect();
         println!("X count: {}", x_count);
-        return TabularData::ParameterLP(x_count, xs, vec);
+        return TabularData::ParameterLP(x_count, xs, vec, equals);
     }
 }
 
-fn create_table(text: &str) -> Box<Tableau> {
+fn create_table(text: &str) -> (Box<Tableau>, bool) {
     let parsed = parse_inequalities(text);
     match parsed {
-        TabularData::LP(opt, con) => {
-            Box::new(LP::new_standard(opt, con))
+        TabularData::LP(opt, con, eq) => {
+            let (lp, phase_one) = LP::new_standard(opt, con, eq);
+            (Box::new(lp), phase_one)
         }
-        TabularData::ParameterLP(x_count, var_opt, lambda_con) => {
-            Box::new(ParameterLP::new_standard(x_count, var_opt, lambda_con))
+        TabularData::ParameterLP(x_count, var_opt, lambda_con, eq) => {
+            let (plp, phase_one) = ParameterLP::new_standard(x_count, var_opt, lambda_con, eq);
+            (Box::new(plp), phase_one)
         }
+    }
+}
+///Does initializations for the general simplex method. Returns the initial matrix, a vector
+///representing which columns are artificial, and a boolean representing whether or not a Phase 1
+///is needed.
+fn matrix_init(optim: &Vec<Rational64>, constraints: &Vec<Vec<Rational64>>,
+               equals: &Vec<usize>) -> (DMatrix<Rational64>, Vec<bool>, bool) {
+    let variables = constraints[0].len() - 1;
+    let rows = constraints.len() + 1;
+    let cols = constraints.len() + 2 + variables;
+    let mut art = vec![false; cols];
+    let mut phase_flag = {
+        if equals.len() == 0 {
+            false
+        } else {
+            true
+        }
+    };
+    let mut art_cols = Vec::new();
+    for r in equals.iter() {
+        let col = variables + *r;
+        art[col] = true;
+        art_cols.push(col);
+    }
+    //Penultimate column special a_0, for correcting negative inequalities
+    let mut matrix = DMatrix::from_element(rows+1, cols, Ratio::zero());
+    //Init optimization row
+    for i in 0..optim.len() {
+        matrix[(0, i)] = optim[i];
+    }
+    //Init variable columns
+    for i in 1..rows {
+        for j in 0..variables {
+            matrix[(i, j)] = constraints[i-1][j];
+        }
+    }
+    let mut row = 1;
+    //Init slack variables
+    for col in variables..cols-2 {
+        matrix[(row, col)] = Ratio::one();
+        row += 1;
+        if art[col] {
+            matrix[(rows, col)] = Ratio::one();
+        }
+    }
+    //Init row values
+    let mut slack_col = variables;
+    for r in 1..rows {
+        matrix[(r, cols-1)] = constraints[r-1][variables];
+        if !art[slack_col] { //If not an equality constraint
+            if matrix[(r, cols-1)] < Ratio::zero() { //If negative rhs
+                matrix[(r, cols-2)] = Ratio::from_integer(-1); //init a_0 value
+                matrix[(rows, cols-2)] = Ratio::one();
+                phase_flag = true;
+            }
+        }
+        slack_col += 1;
+    }
+    //Init optim row
+    for i in 0..optim.len() {
+        matrix[(0, i)] = optim[i];
+    }
+    return (matrix, art, phase_flag);
+}
+
+struct PolyVec {
+    data: Vec<Rational64>,
+    poly_len: usize, //Number of terms in each polynomial
+    poly_count: usize, //Number of polynomials
+}
+
+impl PolyVec {
+    fn new(data: Vec<Rational64>, poly_len: usize, poly_count: usize) -> PolyVec {
+        PolyVec {
+            data,
+            poly_len,
+            poly_count
+        }
+    }
+    fn operate(&mut self, row: &DMatrix<Rational64>, multipliers: Vec<Rational64>) {
+        for (col, m) in multipliers.into_iter().enumerate() {
+            if m == Ratio::zero() {continue;}
+            let r = row * m;
+            for val in r.iter() {
+               for p_index in 0..self.poly_count {
+                   let index = self.index(p_index, col);
+                   self.data[index] += *val;
+               }
+            }
+        }
+    }
+    fn index(&self, poly_index: usize, col: usize) -> usize {
+        return poly_index * self.poly_len + col
     }
 }
 
@@ -463,8 +615,8 @@ fn main() {
         }
     };
 
-    let mut table = create_table(&input_data);
-    table.solve();
+    let (mut table, phase_one) = create_table(&input_data);
+    table.solve(phase_one);
 }
 
 #[cfg(test)]
