@@ -51,8 +51,6 @@ trait Tableau {
         }
         let pivot_col = self.choose_var();
         let pivot_row = self.choose_row(pivot_col);
-        println!("{}", self.matrix());
-        println!("Pivot row {:?}, Pivot_col {}", pivot_row, pivot_col);
         match pivot_row {
             Some(r) => {
                 //Zero out the rest of the pivot_column with row operations using pivot_row
@@ -112,8 +110,6 @@ trait Tableau {
     }
     ///Try to eliminate artificial variables to get a feasible initial tableau.
     fn artificial_solve(&mut self, artificial_cols: Vec<usize>) -> bool {
-        println!("Artificial solve: ");
-        println!("{:?}", artificial_cols);
         let nrows = self.matrix().nrows();
         let ncols = self.matrix().ncols();
         for col in artificial_cols {
@@ -233,13 +229,15 @@ impl Tableau for ParameterLP {
     fn num_variables(&self) -> usize {
         self.lambda_count
     }
-    fn solve(&mut self, mut phase_one: bool) -> bool {
+    fn solve(&mut self, phase_one: bool) -> bool {
         let num_solutions = 2; //Todo compute this, or find other halting condition
         let mut solutions = Vec::new();
         while solutions.len() < num_solutions {
             println!("X: {:?}", self.fixed_x);
+            let mut print = Vec::new();
             if phase_one {
-                println!("Initiating Phase I to reach a feasible starting point");
+                print.push(format!("Initial Matrix: {}", self.matrix));
+                print.push("Initiating Phase I to reach a feasible starting point".to_string());
                 let artificial_cols = self.artificial.iter().enumerate()
                     .filter_map(|(index, b)| {
                         if *b {
@@ -249,8 +247,8 @@ impl Tableau for ParameterLP {
                         }
                     }).collect();
                 if self.artificial_solve(artificial_cols) {
-                    println!("Phase I successful beginning Simplex method proper with:\n{}",
-                             self.matrix);
+                    print.push(format!("Phase I successful beginning Simplex method proper with:\n{}",
+                             self.matrix));
                 } else {
                     println!("Unable to find a feasible solution under these X.");
                     self.matrix = self.initial_condition.clone();
@@ -269,6 +267,9 @@ impl Tableau for ParameterLP {
                 }
             }
             if !solutions.contains(&vec) {
+                for line in print {
+                    println!("{}", line);
+                }
                 print!("Solution vector (in X): ");
                 for x in vec.iter() {
                     print!("{} ", x);
@@ -277,7 +278,14 @@ impl Tableau for ParameterLP {
                 for y in lambda.iter() {
                     print!("{} ", y);
                 }
-                println!("\n{}", self.matrix);
+                let mut art = Vec::new();
+                for (index, b) in self.artificial_cols().iter().enumerate() {
+                    if *b {
+                        art.push(index);
+                    }
+                }
+                println!("\nArtificial columns: {:?}", art);
+                println!("{}", self.matrix);
                 solutions.push(vec);
             }
             self.matrix = self.initial_condition.clone();
@@ -341,7 +349,6 @@ impl ParameterLP {
 
 struct LP {
     matrix: DMatrix<Rational64>,
-    optim: Vec<Rational64>,
     artificial: Vec<bool>,
     variables: usize, //Number of non-slack variables
 }
@@ -402,9 +409,8 @@ impl LP {
                     equals: Vec<usize>) -> (LP, bool) {
         let variables = constraints[0].len() - 1;
         let (matrix, art, phase_flag) = matrix_init(&optim, &constraints, &equals);
-        let mut lp = LP {
+        let lp = LP {
             matrix,
-            optim,
             artificial: art,
             variables,
         };
@@ -416,7 +422,6 @@ impl LP {
         let table = LP {
             matrix: DMatrix::from_iterator(n, m, slice.iter()
                 .map(|n| Ratio::from_integer(*n))),
-            optim: Vec::new(),
             artificial: Vec::new(),
             variables: 2,
         };
@@ -627,9 +632,9 @@ mod test {
         let test_str1 = "4 3 0\n2 3 6\n-3 2 3\n0 2 5\n2 1 4";
         let test_str2 = "20 10 15 0\n3 2 5 55\n2 1 1 26\n1 1 3 30\n5 2 4 57";
         let test_str3 = "1000 1200 0\n10 5 200\n2 3 60\n1 0 34\n0 1 14";
-        let tab1 = create_table(test_str1);
-        let tab2 = create_table(test_str2);
-        let tab3 = create_table(test_str3);
+        let (tab1, _) = create_table(test_str1);
+        let (tab2, _) = create_table(test_str2);
+        let (tab3, _) = create_table(test_str3);
         let test1 = [
             -4, 2, -3, 0, 2,
             -3, 3, 2, 2, 1,
@@ -679,8 +684,8 @@ mod test {
         ];
         for i in 0..test_arr.len() {
             let string = test_arr[i];
-            let mut table = create_table(string);
-            while table.pivot() {}
+            let (mut table, phase_one) = create_table(string);
+            table.solve(phase_one);
             assert_eq!(table.read_solution(), solutions[i]);
         }
 
