@@ -436,49 +436,6 @@ fn main() {
 mod test {
     use super::*;
     #[test]
-    fn test_standard_parsing() {
-        let test_str1 = "4 3 0\n2 3 6\n-3 2 3\n0 2 5\n2 1 4";
-        let test_str2 = "20 10 15 0\n3 2 5 55\n2 1 1 26\n1 1 3 30\n5 2 4 57";
-        let test_str3 = "1000 1200 0\n10 5 200\n2 3 60\n1 0 34\n0 1 14";
-        let (tab1, _) = create_table(test_str1);
-        let (tab2, _) = create_table(test_str2);
-        let (tab3, _) = create_table(test_str3);
-        let test1 = [
-            -4, 2, -3, 0, 2,
-            -3, 3, 2, 2, 1,
-            0, 1, 0, 0, 0,
-            0, 0, 1, 0, 0,
-            0, 0, 0, 1, 0,
-            0, 0, 0, 0, 1,
-            0, 6, 3, 5, 4]; //Column major
-        let test2 = [
-            -20, 3, 2, 1, 5,
-            -10, 2, 1, 1, 2,
-            -15, 5, 1, 3, 4,
-            0, 1, 0, 0, 0,
-            0, 0, 1, 0, 0,
-            0, 0, 0, 1, 0,
-            0, 0, 0, 0, 1,
-            0, 55, 26, 30, 57];
-        let test3 = [
-            -1000, 10, 2, 1, 0,
-            -1200, 5, 3, 0, 1,
-            0, 1, 0, 0, 0,
-            0, 0, 1, 0, 0,
-            0, 0, 0, 1, 0,
-            0, 0, 0, 0, 1,
-            0, 200, 60, 34, 14];
-        let tab1 = (tab1.matrix(),
-                    LP::new_from_tabular(5, 7, &test1));
-        let tab2 = (tab2.matrix(),
-                    LP::new_from_tabular(5, 8, &test2));
-        let tab3 = (tab3.matrix(),
-                    LP::new_from_tabular(5, 7, &test3));
-        assert_eq!(tab1.0, &tab1.1.matrix);
-        assert_eq!(tab2.0, &tab2.1.matrix);
-        assert_eq!(tab3.0, &tab3.1.matrix);
-    }
-    #[test]
     fn test_solutions() {
         let test_arr = [
             "4 3 0\n2 3 6\n-3 2 3\n0 2 5\n2 1 4",
