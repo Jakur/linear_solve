@@ -41,7 +41,7 @@ impl Tableau for ParameterLP {
         let num_solutions = 2; //Todo compute this, or find other halting condition
         let mut solutions = Vec::new();
         while solutions.len() < num_solutions {
-            println!("X: {:?}", self.fixed_x);
+            // println!("X: {:?}", self.fixed_x);
             let mut print = Vec::new();
             if phase_one {
                 print.push(format!("Initial Matrix: {}", self.matrix));
@@ -75,25 +75,27 @@ impl Tableau for ParameterLP {
                 }
             }
             if !solutions.contains(&vec) {
-                for line in print {
-                    println!("{}", line);
-                }
-                print!("Solution vector (in X): ");
-                for x in vec.iter() {
-                    print!("{} ", x);
-                }
-                print!("\nSolution vector (in Lambda): ");
-                for y in lambda.iter() {
-                    print!("{} ", y);
-                }
-                let mut art = Vec::new();
-                for (index, b) in self.artificial_cols().iter().enumerate() {
-                    if *b {
-                        art.push(index);
-                    }
-                }
-                println!("\nArtificial columns: {:?}", art);
-                println!("{}", self.matrix);
+//                for line in print {
+//                    println!("{}", line);
+//                }
+//                print!("Solution vector (in X): ");
+//                for x in vec.iter() {
+//                    print!("{} ", x);
+//                }
+//                print!("\nSolution vector (in Lambda): ");
+//                for y in lambda.iter() {
+//                    print!("{} ", y);
+//                }
+//                println!();
+                print_inequality(&vec);
+//                let mut art = Vec::new();
+//                for (index, b) in self.artificial_cols().iter().enumerate() {
+//                    if *b {
+//                        art.push(index);
+//                    }
+//                }
+//                println!("\nArtificial columns: {:?}", art);
+//                println!("{}", self.matrix);
                 solutions.push(vec);
             }
             self.matrix = self.initial_condition.clone();
@@ -406,6 +408,26 @@ impl PolyVec {
     }
     fn index(&self, poly_index: usize, col: usize) -> usize {
         return poly_index * self.poly_len + col
+    }
+}
+
+fn print_inequality(vec: &Vec<Rational64>) {
+    let first = vec[0..vec.len() - 1].iter().enumerate()
+        .find(|tup| *tup.1 != Ratio::zero()); //First nonzero x value
+    print!("Resulting inequality: ");
+    match first {
+        Some((index, val)) => {
+            print!("{}[x{}]", val, index);
+            for i in index + 1..vec.len() - 1 {
+                if vec[i] != Ratio::zero() {
+                    print!("+ {}[x{}", vec[i], i);
+                }
+            }
+            println!(" ≤ {}", vec[vec.len() - 1] * -1);
+        }
+        None => {
+            println!("Trivial solution 0 ≤ {}", vec[vec.len() - 1] * -1);
+        }
     }
 }
 
