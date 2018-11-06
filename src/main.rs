@@ -39,7 +39,7 @@ impl Tableau for ParameterLP {
         self.lambda_count
     }
     fn solve(&mut self, phase_one: bool) -> bool {
-        let num_solutions = 10; //Todo compute this, or find other halting condition
+        let num_solutions = 4; //Todo compute this, or find other halting condition
         let mut solutions = Vec::new();
         while solutions.len() < num_solutions {
             // println!("X: {:?}", self.fixed_x);
@@ -80,7 +80,7 @@ impl Tableau for ParameterLP {
                 print!("{} ", x);
             }
             println!("]");
-            if self.fixed_x[0] > Ratio::from_integer(10) {
+            if self.fixed_x[0] > Ratio::from_integer(30) {
                 self.changing += 1;
                 if self.changing >= self.fixed_x.len() {
                     return true;
@@ -93,29 +93,29 @@ impl Tableau for ParameterLP {
                     print!("{} ", x);
                 }
                 println!("]");
-//                for line in print {
-//                    println!("{}", line);
-//                }
-//                print!("Solution vector (in X): ");
-//                for x in vec.iter() {
-//                    print!("{} ", x);
-//                }
-//                print!("\nSolution vector (in Lambda): ");
-//                for y in lambda.iter() {
-//                    print!("{} ", y);
-//                }
-//                println!();
+                for line in print {
+                    println!("{}", line);
+                }
+                print!("Solution vector (in X): ");
+                for x in vec.iter() {
+                    print!("{} ", x);
+                }
+                print!("\nSolution vector (in Lambda): ");
+                for y in lambda.iter() {
+                    print!("{} ", y);
+                }
+                println!();
                 print_inequality(&vec);
-//                let mut art = Vec::new();
-//                for (index, b) in self.artificial_cols().iter().enumerate() {
-//                    if *b {
-//                        art.push(index);
-//                    }
-//                }
-//                println!("\nArtificial columns: {:?}", art);
-//                println!("{}", self.matrix);
+                let mut art = Vec::new();
+                for (index, b) in self.artificial_cols().iter().enumerate() {
+                    if *b {
+                        art.push(index);
+                    }
+                }
+                println!("\nArtificial columns: {:?}", art);
+                println!("{}", self.matrix);
                 solutions.push(vec);
-                if solutions.len() % 2 == 0 {
+                if solutions.len() % 30 == 0 {
                     self.changing += 1;
                     if self.changing >= self.fixed_x.len() {
                         return true;
@@ -177,15 +177,8 @@ impl ParameterLP {
     }
     fn update_fixed_x(&mut self) {
         //Todo find heuristic
-        if self.fixed_x[0] == self.fixed_x[self.changing - 1] {
-            self.fixed_x[0] += 1;
-            return
-        }
-        for i in 0..self.changing {
-            if self.fixed_x[i] != self.fixed_x[i+1] {
-                self.fixed_x[i+1] += 1;
-                return
-            }
+        for i in 0..self.fixed_x.len() {
+            self.fixed_x[i] += 1;
         }
     }
 }
@@ -450,13 +443,13 @@ fn print_inequality(vec: &Vec<Rational64>) {
     print!("Resulting inequality: ");
     match first {
         Some((index, val)) => {
-            print!("{}[x{}]", val, index);
+            print!("{}[x{}]", val, index + 1);
             for i in index + 1..vec.len() - 1 {
                 if vec[i] != Ratio::zero() {
-                    print!("+ {}[x{}", vec[i], i);
+                    print!(" + {}[x{}]", vec[i], i + 1);
                 }
             }
-            println!(" ≤ {}", vec[vec.len() - 1] * -1);
+            println!(" ≥ {}", vec[vec.len() - 1] * -1);
         }
         None => {
             println!("Trivial solution 0 ≤ {}", vec[vec.len() - 1] * -1);
