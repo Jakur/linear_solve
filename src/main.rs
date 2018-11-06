@@ -39,7 +39,7 @@ impl Tableau for ParameterLP {
         self.lambda_count
     }
     fn solve(&mut self, phase_one: bool) -> bool {
-        let num_solutions = 4; //Todo compute this, or find other halting condition
+        let num_solutions = 20; //Todo compute this, or find other halting condition
         let mut solutions = Vec::new();
         while solutions.len() < num_solutions {
             // println!("X: {:?}", self.fixed_x);
@@ -80,7 +80,7 @@ impl Tableau for ParameterLP {
                 print!("{} ", x);
             }
             println!("]");
-            if self.fixed_x[0] > Ratio::from_integer(30) {
+            if self.fixed_x[self.changing] > Ratio::from_integer(50) {
                 self.changing += 1;
                 if self.changing >= self.fixed_x.len() {
                     return true;
@@ -93,9 +93,9 @@ impl Tableau for ParameterLP {
                     print!("{} ", x);
                 }
                 println!("]");
-                for line in print {
-                    println!("{}", line);
-                }
+//                for line in print {
+//                    println!("{}", line);
+//                }
                 print!("Solution vector (in X): ");
                 for x in vec.iter() {
                     print!("{} ", x);
@@ -106,22 +106,21 @@ impl Tableau for ParameterLP {
                 }
                 println!();
                 print_inequality(&vec);
-                let mut art = Vec::new();
-                for (index, b) in self.artificial_cols().iter().enumerate() {
-                    if *b {
-                        art.push(index);
-                    }
-                }
-                println!("\nArtificial columns: {:?}", art);
-                println!("{}", self.matrix);
+//                let mut art = Vec::new();
+//                for (index, b) in self.artificial_cols().iter().enumerate() {
+//                    if *b {
+//                        art.push(index);
+//                    }
+//                }
+//                println!("\nArtificial columns: {:?}", art);
+                // println!("{}", self.matrix);
                 solutions.push(vec);
-                if solutions.len() % 30 == 0 {
-                    self.changing += 1;
-                    if self.changing >= self.fixed_x.len() {
-                        return true;
-                    }
-                    self.fixed_x = vec![Ratio::zero(); self.fixed_x.len()];
-                }
+//                if solutions.len() % 25 == 0 {
+//                    if self.changing >= self.fixed_x.len() {
+//                        return true;
+//                    }
+//                    self.fixed_x = vec![Ratio::zero(); self.fixed_x.len()];
+//                }
             }
             self.matrix = self.initial_condition.clone();
             self.update_fixed_x();
@@ -157,7 +156,7 @@ impl ParameterLP {
             optim_function: opt,
             initial_condition: matrix,
             artificial,
-            changing: 1,
+            changing: 0,
         };
         para.update_objective_row(); //Necessary if all fixed_x != 0
         (para, phase_one)
@@ -177,8 +176,9 @@ impl ParameterLP {
     }
     fn update_fixed_x(&mut self) {
         //Todo find heuristic
-        for i in 0..self.fixed_x.len() {
-            self.fixed_x[i] += 1;
+        for i in self.changing..self.changing + self.fixed_x.len() {
+            let m = i % self.fixed_x.len();
+            self.fixed_x[m] += Ratio::from((1, (i - self.changing) as i64 + 1));
         }
     }
 }
@@ -449,7 +449,7 @@ fn print_inequality(vec: &Vec<Rational64>) {
                     print!(" + {}[x{}]", vec[i], i + 1);
                 }
             }
-            println!(" ≥ {}", vec[vec.len() - 1] * -1);
+            println!(" ≤ {}", vec[vec.len() - 1] * -1);
         }
         None => {
             println!("Trivial solution 0 ≤ {}", vec[vec.len() - 1] * -1);
