@@ -172,6 +172,7 @@ pub trait Tableau {
     }
     ///Find and return the optimal values of the true variables
     fn read_solution(&self) -> Vec<Rational64> {
+        let mut chosen = vec![false; self.matrix().nrows()];
         let mut values = Vec::new();
         'outer: for var_column in 0..self.num_variables() {
             let mut row = None; //Row suspected to hold the value of the variable
@@ -183,13 +184,16 @@ pub trait Tableau {
                             continue 'outer;
                         }
                         None => {
-                            row = Some(index);
+                            if !chosen[index] {
+                                row = Some(index);
+                            }
                         }
                     }
                 }
             }
             if let Some(r) = row {
                 values.push(self.matrix()[(r, self.matrix().ncols()-1)]);
+                chosen[r] = true;
             } else { //The whole column was zero. Unknown if this can happen
                 values.push(Ratio::zero());
             }
