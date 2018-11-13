@@ -1,12 +1,14 @@
 extern crate num_traits;
 extern crate num_rational;
 extern crate nalgebra;
+extern crate rand;
 
 use num_traits::identities::Zero;
 use num_traits::identities::One;
 use num_rational::Rational64;
 use num_rational::Ratio;
 use nalgebra::DMatrix;
+use rand::Rng;
 
 mod tableau;
 use tableau::Tableau;
@@ -25,6 +27,7 @@ struct ParameterLP {
     initial_condition: DMatrix<Rational64>,
     artificial: Vec<bool>,
     changing: usize,
+    rng: rand::ThreadRng,
 }
 
 impl Tableau for ParameterLP {
@@ -41,12 +44,14 @@ impl Tableau for ParameterLP {
     fn solve(&mut self, phase_one: bool) -> bool {
         let num_solutions = 20; //Todo compute this, or find other halting condition
         let mut solutions = Vec::new();
-        while solutions.len() < num_solutions {
+        let mut counter = 0;
+        while solutions.len() < num_solutions && counter < 10000 {
+            counter += 1;
             // println!("X: {:?}", self.fixed_x);
-            let mut print = Vec::new();
+//            let mut print = Vec::new();
             if phase_one {
-                print.push(format!("Initial Matrix: {}", self.matrix));
-                print.push("Initiating Phase I to reach a feasible starting point".to_string());
+//                print.push(format!("Initial Matrix: {}", self.matrix));
+//                print.push("Initiating Phase I to reach a feasible starting point".to_string());
                 let artificial_cols = self.artificial.iter().enumerate()
                     .filter_map(|(index, b)| {
                         if *b {
@@ -56,8 +61,8 @@ impl Tableau for ParameterLP {
                         }
                     }).collect();
                 if self.artificial_solve(artificial_cols) {
-                    print.push(format!("Phase I successful beginning Simplex method proper with:\n{}",
-                             self.matrix));
+//                    print.push(format!("Phase I successful beginning Simplex method proper with:\n{}",
+//                             self.matrix));
                 } else {
                     println!("Unable to find a feasible solution under these X.");
                     self.matrix = self.initial_condition.clone();
@@ -75,19 +80,13 @@ impl Tableau for ParameterLP {
                     vec[var_index] += *val * lambda[sl_index];
                 }
             }
-            print!("X: [");
-            for x in self.fixed_x.iter() {
-                print!("{} ", x);
-            }
-            println!("]");
-            if self.fixed_x[self.changing] > Ratio::from_integer(50) {
-                self.changing += 1;
-                if self.changing >= self.fixed_x.len() {
-                    return true;
-                }
-                self.fixed_x = vec![Ratio::zero(); self.fixed_x.len()];
-            }
+//            print!("X: [");
+//            for x in self.fixed_x.iter() {
+//                print!("{} ", x);
+//            }
+//            println!("]");
             if !solutions.contains(&vec) {
+                println!("Solution {}, Attempt {}", solutions.len() + 1, counter);
                 print!("X: [");
                 for x in self.fixed_x.iter() {
                     print!("{} ", x);
@@ -106,6 +105,7 @@ impl Tableau for ParameterLP {
                 }
                 println!();
                 print_inequality(&vec);
+                println!();
 //                let mut art = Vec::new();
 //                for (index, b) in self.artificial_cols().iter().enumerate() {
 //                    if *b {
@@ -126,6 +126,7 @@ impl Tableau for ParameterLP {
             self.update_fixed_x();
             self.update_objective_row();
         }
+        println!("Counter: {}", counter);
         return true
     }
     fn artificial_cols(&self) -> &Vec<bool> {
@@ -139,6 +140,9 @@ impl ParameterLP {
         //Fix all x initially to zero
         let variables = constraints[0].len() - 1;
         let fixed_x = vec![Ratio::from_integer(0); x_count]; //Todo fix this
+//        let mut fixed_x = vec![Ratio::from((39, 12)); 6];
+//        fixed_x[4] = Ratio::from((9, 2));
+//        fixed_x[5] = Ratio::from((9, 2));
         let mut counter = x_count;
         let mut init_optim = Vec::new();
         for _ in 0..variables {
@@ -157,6 +161,7 @@ impl ParameterLP {
             initial_condition: matrix,
             artificial,
             changing: 0,
+            rng: rand::thread_rng(),
         };
         para.update_objective_row(); //Necessary if all fixed_x != 0
         (para, phase_one)
@@ -176,9 +181,10 @@ impl ParameterLP {
     }
     fn update_fixed_x(&mut self) {
         //Todo find heuristic
-        for i in self.changing..self.changing + self.fixed_x.len() {
-            let m = i % self.fixed_x.len();
-            self.fixed_x[m] += Ratio::from((1, (i - self.changing) as i64 + 1));
+        for i in 0..self.fixed_x.len() {
+            let a: i64 = self.rng.gen_range(-100, 100);
+            let b: i64 = self.rng.gen_range(1, 100);
+            self.fixed_x[i] = Ratio::from((a, b));
         }
     }
 }
