@@ -5,19 +5,16 @@ extern crate rand;
 
 use num_traits::identities::Zero;
 use num_traits::identities::One;
+use num_traits::FromPrimitive;
 use num_rational::Rational64;
 use num_rational::Ratio;
 use nalgebra::DMatrix;
 use rand::Rng;
 
 mod tableau;
+mod parse;
+use parse::{create_table};
 use tableau::Tableau;
-
-enum TabularData {
-    LP(Vec<Rational64>, Vec<Vec<Rational64>>, Vec<usize>), //Opt, Constraints, Equality Indices
-    //x_count, Opt, Constr, Eq Indices
-    ParameterLP(usize, Vec<Rational64>, Vec<Vec<Rational64>>, Vec<usize>),
-}
 
 struct ParameterLP {
     matrix: DMatrix<Rational64>,
@@ -270,85 +267,7 @@ impl LP {
         table
     }
 }
-///Parses a matrix as written in text as a vector of row vectors
-fn parse_inequalities(text: &str) -> TabularData {
-    let mut greater = Vec::new();
-    let mut equals = Vec::new();
-    let mut iter = text.lines().enumerate();
-    let (_, opt_line) = iter.next().expect("Optimization line malformed");
-    let split: Vec<_> = opt_line.split(|c| c == '[' || c == ']').collect();
-    let mut vec: Vec<Vec<Rational64>> = iter
-        .map(|(index, line)| line.split_whitespace()
-        .filter_map(|x| {
-            match x.parse() {
-                Ok(num) => {
-                    Some(num)
-                }
-                _ => {
-                    match x {
-                        ">=" => {greater.push(index-1)},
-                        "=" => {equals.push(index-1)},
-                        "<=" => {} //Already canonical form, okay
-                        _ => {panic!("Unrecognized string supplied.")}
-                    }
-                    None
-                }
-            }
-        }).collect()).collect();
 
-    //Flip the signs to make greater than or equal to into less than or equal to
-    for index in greater.into_iter() {
-        for i in 0..vec[index].len() {
-            vec[index][i] *= -1;
-        }
-    }
-    //Make the rhs of all equality constraints nonnegative
-    for index in equals.iter() {
-        let index = *index;
-        let length = vec[index].len();
-        if vec[index][length-1] < Ratio::zero() {
-            let opposite: Vec<_> = vec[index].iter()
-                .map(|num| Ratio::from_integer(-1) * num).collect();
-            vec[index] = opposite;
-        }
-    }
-    if split.len() == 1 { //Normal LP
-        let opt = split[0].split_whitespace().filter_map(|x| {
-            //Make optimization values negative
-            match x.parse::<Rational64>() {
-                Ok(num) => {Some(num * -1)},
-                _ => None,
-            }
-        }).collect();
-        return TabularData::LP(opt, vec, equals);
-    } else { //Parametrized LP
-        let x_count = split[1].split_whitespace().count() - 1; //-1 for constant term
-        let xs: Vec<_> = split.into_iter().map(|lambda| {
-            lambda.split_whitespace().filter_map(|x| {
-                match x.parse::<Rational64>() {
-                    Ok(num) => {Some(num * -1)}, //Todo figure out if * -1 is appropriate
-                    _ => None,
-                }
-            })
-        }).flatten().collect();
-        println!("X count: {}", x_count);
-        return TabularData::ParameterLP(x_count, xs, vec, equals);
-    }
-}
-
-fn create_table(text: &str) -> (Box<Tableau>, bool) {
-    let parsed = parse_inequalities(text);
-    match parsed {
-        TabularData::LP(opt, con, eq) => {
-            let (lp, phase_one) = LP::new_standard(opt, con, eq);
-            (Box::new(lp), phase_one)
-        }
-        TabularData::ParameterLP(x_count, var_opt, lambda_con, eq) => {
-            let (plp, phase_one) = ParameterLP::new_standard(x_count, var_opt, lambda_con, eq);
-            (Box::new(plp), phase_one)
-        }
-    }
-}
 ///Does initializations for the general simplex method. Returns the initial matrix, a vector
 ///representing which columns are artificial, and a boolean representing whether or not a Phase 1
 ///is needed.
