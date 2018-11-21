@@ -136,25 +136,24 @@ pub fn parse_mps(text: &str) -> TabularData {
     }).collect();
     tuples.sort_by(|a, b| a.0.cmp(&b.0));
     let mut tup_iter = tuples.into_iter();
-    let tuple = tup_iter.next();
+    let mut tuple = tup_iter.next();
     let mut opt = None;
     let mut constraints = Vec::with_capacity(num_rows);
 
     for i in 0..num_rows {
         let mut row_vec = vec![Ratio::zero(); num_cols];
-        match tuple {
-            Some(tuple) => {
-                while tuple.0 == i {
-                    if greater[i] {
-                        row_vec[tuple.1] = Ratio::from_f64(-1.0 * tuple.2)
-                            .expect("Invalid Rational");
-                    } else {
-                        row_vec[tuple.1] = Ratio::from_f64(tuple.2)
-                            .expect("Invalid Rational");
-                    }
-                }
-            },
-            None => {}, //Should only happen at very end
+        while let Some(t) = tuple {
+            if t.0 != i {
+                break;
+            }
+            if greater[i] {
+                row_vec[t.1] = Ratio::from_f64(-1.0 * t.2)
+                    .expect("Invalid Rational");
+            } else {
+                row_vec[t.1] = Ratio::from_f64(t.2)
+                    .expect("Invalid Rational");
+            }
+            tuple = tup_iter.next();
         }
         if i == 0 {
             opt = Some(row_vec);
