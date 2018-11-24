@@ -102,6 +102,7 @@ pub trait Tableau {
     fn artificial_solve(&mut self, artificial_cols: Vec<usize>) -> bool {
         let nrows = self.matrix().nrows();
         let ncols = self.matrix().ncols();
+//        println!("nrows: {} ncols: {}", nrows, ncols);
         for col in artificial_cols {
             //println!("{}", self.matrix());
             let row = col - self.num_variables() + 1; //Todo verify this
@@ -130,10 +131,11 @@ pub trait Tableau {
             None => {} //No a_0 to eliminate
         }
         //Find optimality for the bottom row--the w row
+        println!("Optimizing...");
         while self.matrix()[(nrows-1, ncols-1)] < Ratio::zero() {
             //println!("{}", self.matrix());
             let mut best_col = None;
-            for col in 1..ncols - 1 {
+            for col in 1..ncols - 1 { //Todo verify correct lower bound
                 match best_col {
                     Some(b) => {
                         if self.matrix()[(nrows-1, col)] < self.matrix()[(nrows-1, b)] {
@@ -143,10 +145,12 @@ pub trait Tableau {
                     None => {best_col = Some(col);}
                 }
             }
+            println!("Best col: {:?} w value: {}", best_col, self.matrix()[(nrows-1, ncols-1)]);
             match best_col {
                 Some(best_col) => {
                     if self.matrix()[(nrows-1, best_col)] < Ratio::zero() {
                         let row = self.choose_row(best_col);
+//                        println!("Best row: {:?}", row);
                         if let Some(best_row) = row {
                             self.eliminate(best_row, best_col);
                         } else {
@@ -156,6 +160,15 @@ pub trait Tableau {
                                 return true;
                             }
                         }
+                    } else { //Todo figure out if this is right
+//                        println!("{}", self.matrix());
+//                        for val in self.matrix().column(best_col).iter() {
+//                            println!("{}", val);
+//                        }
+//                        for val in self.matrix().row(self.matrix().nrows() - 1).iter() {
+//                            println!("{}", val);
+//                        }
+                        return false;
                     }
                 }
                 None => {

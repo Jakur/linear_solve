@@ -1,5 +1,10 @@
 use super::*;
 
+pub enum FileFormat {
+    Custom, //Our format
+    MPS,
+}
+
 pub enum TabularData {
     LP(Vec<Rational64>, Vec<Vec<Rational64>>, Vec<usize>), //Opt, Constraints, Equality Indices
     //x_count, Opt, Constr, Eq Indices
@@ -135,6 +140,7 @@ pub fn parse_mps(text: &str) -> TabularData {
         })
     }).collect();
     tuples.sort_by(|a, b| a.0.cmp(&b.0));
+    println!("Size: {}", tuples.len());
     let mut tup_iter = tuples.into_iter();
     let mut tuple = tup_iter.next();
     let mut opt = None;
@@ -161,11 +167,33 @@ pub fn parse_mps(text: &str) -> TabularData {
             constraints.push(row_vec);
         }
     }
+    let mut nonzero = 0;
+    for row in constraints.iter() {
+        print!("[ ");
+        for val in row.iter().rev().skip(1) {
+            if *val != Ratio::zero() {
+                nonzero += 1;
+            }
+            print!("{} ", val);
+        }
+        println!("] ");
+    }
+    let opt = opt.unwrap();
+    for val in opt.iter() {
+        if *val != Ratio::zero() {
+            nonzero += 1;
+        }
+    }
+    let opt = Some(opt);
+    println!("Nonzero: {}", nonzero);
     return TabularData::LP(opt.expect("No optimization row found"), constraints, equals);
 }
 
-pub fn create_table(text: &str) -> (Box<Tableau>, bool) {
-    let parsed = parse_inequalities(text);
+pub fn create_table(text: &str, format: FileFormat) -> (Box<Tableau>, bool) {
+    let parsed = match format {
+        FileFormat::Custom => parse_inequalities(text),
+        FileFormat::MPS => parse_mps(text),
+    };
     match parsed {
         TabularData::LP(opt, con, eq) => {
             let (lp, phase_one) = LP::new_standard(opt, con, eq);

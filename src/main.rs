@@ -386,14 +386,22 @@ fn main() {
     use std::env;
     use std::fs::File;
     use std::io::Read;
+    use parse::FileFormat;
 
     let args: Vec<String> = env::args().collect();
-    let input_data = match args.get(1) {
+    let (input_data, format) = match args.get(1) {
         Some(file_string) => {
+            let format = {
+                if file_string.ends_with("mps") {
+                    FileFormat::MPS
+                } else {
+                    FileFormat::Custom
+                }
+            };
             let mut f = File::open(file_string).expect("File not found!");
             let mut contents = String::new();
             f.read_to_string(&mut contents).expect("File reading failed!");
-            contents
+            (contents, format)
         },
         _ => {
             println!("No input file given.");
@@ -401,7 +409,7 @@ fn main() {
         }
     };
 
-    let (mut table, phase_one) = create_table(&input_data);
+    let (mut table, phase_one) = create_table(&input_data, format);
     table.solve(phase_one);
 }
 
