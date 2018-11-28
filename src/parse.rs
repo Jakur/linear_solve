@@ -89,14 +89,21 @@ pub fn parse_mps(text: &str) -> TabularData {
     let mut equals = Vec::new();
     let mut line = lines.next().unwrap();
     let mut row = 0;
+    let mut optim_row = 0;
     while !line.starts_with("COLUMNS") { //Read Rows
         let mut split = line.split_whitespace();
-        match split.next().unwrap() {
-            "E" => {equals.push(row); greater.push(false);}
-            "G" => {greater.push(true);}
-            _ => {greater.push(false);} //Should only be "N" or "L"
+        let first = split.next().unwrap();
+        match first {
+            "E" => {equals.push(row); greater.push(false);},
+            "G" => {greater.push(true);},
+            "N" => { //Should represent the optimization row
+                greater.push(false);
+                optim_row = row;
+            }
+            _ => {greater.push(false);}, //Should only be "L"
         }
-        row_names.insert(split.next().unwrap(), row);
+        let second = split.next().unwrap();
+        row_names.insert(second, row);
 
         row += 1;
         line = lines.next().unwrap();
@@ -161,7 +168,7 @@ pub fn parse_mps(text: &str) -> TabularData {
             }
             tuple = tup_iter.next();
         }
-        if i == 0 {
+        if i == optim_row {
             opt = Some(row_vec);
         } else {
             constraints.push(row_vec);
