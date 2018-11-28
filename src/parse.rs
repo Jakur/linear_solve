@@ -129,11 +129,22 @@ pub fn parse_mps(text: &str) -> TabularData {
     while !line.starts_with("ENDATA") { //Todo bounds, etc.
         let split: Vec<_> = line.split_whitespace().collect();
         if split.len() >= 3 {
-            let value1: f64 = split[2].parse().unwrap();
-            last_col.push((row_names.get(split[1]).unwrap(), value1));
-            if split.len() >= 5 {
-                let value2: f64 = split[4].parse().unwrap();
-                last_col.push((row_names.get(split[3]).unwrap(), value2));
+            if split.len() % 2 == 1 { //This mps redundantly repeats the name of the z col
+                let value1: f64 = split[2].parse().unwrap();
+                last_col.push((row_names.get(split[1])
+                                   .expect(&format!("Couldn't find row {}", split[1])), value1));
+                if split.len() >= 5 {
+                    let value2: f64 = split[4].parse().unwrap();
+                    last_col.push((row_names.get(split[3]).unwrap(), value2));
+                }
+            } else { //Format which omits name of z col
+                let value1: f64 = split[1].parse().unwrap();
+                last_col.push((row_names.get(split[0])
+                                   .expect(&format!("Couldn't find row {}", split[0])), value1));
+                if split.len() >= 4 {
+                    let value2: f64 = split[3].parse().unwrap();
+                    last_col.push((row_names.get(split[2]).unwrap(), value2));
+                }
             }
         }
         line = lines.next().unwrap();
