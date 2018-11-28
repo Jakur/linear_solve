@@ -13,7 +13,7 @@ use rand::Rng;
 
 mod tableau;
 mod parse;
-use parse::{create_table};
+use parse::{create_table, FileFormat};
 use tableau::Tableau;
 
 struct ParameterLP {
@@ -382,14 +382,10 @@ fn print_inequality(vec: &Vec<Rational64>) {
     }
 }
 
-fn main() {
-    use std::env;
+fn read_file(file_string: Option<String>) -> Option<(String, FileFormat)> {
     use std::fs::File;
     use std::io::Read;
-    use parse::FileFormat;
-
-    let args: Vec<String> = env::args().collect();
-    let (input_data, format) = match args.get(1) {
+    match file_string {
         Some(file_string) => {
             let format = {
                 if file_string.ends_with("mps") {
@@ -401,13 +397,21 @@ fn main() {
             let mut f = File::open(file_string).expect("File not found!");
             let mut contents = String::new();
             f.read_to_string(&mut contents).expect("File reading failed!");
-            (contents, format)
+            return Some((contents, format))
         },
-        _ => {
+        None => {
             println!("No input file given.");
-            return;
+            return None;
         }
     };
+}
+
+fn main() {
+    use std::env;
+
+    let args: Vec<String> = env::args().collect();
+    let (input_data, format) = read_file(args.get(1)
+        .map(|s| s.to_string())).expect("Unable to read file!");
 
     let (mut table, phase_one) = create_table(&input_data, format);
     table.solve(phase_one);
@@ -430,11 +434,24 @@ mod test {
         ];
         for i in 0..test_arr.len() {
             let string = test_arr[i];
-            let (mut table, phase_one) = create_table(string);
+            let (mut table, phase_one) = create_table(string, FileFormat::Custom);
             table.solve(phase_one);
             assert_eq!(table.read_solution(), solutions[i]);
         }
 
+    }
+    #[test]
+    fn test_afiro() {
+        let (input_data, format) = read_file(Some("afiro.mps".to_string()))
+            .expect("Unable to read file!");
+        assert_eq!(format, FileFormat::MPS);
+        let (mut table, phase_one) = create_table(&input_data, format);
+        table.solve(phase_one);
+        let objective_value = table.matrix()[(0, table.matrix().ncols() - 1)];
+        let objective_float = *objective_value.numer() as f64 / *objective_value.denom() as f64;
+        let answer = 464.753142857142857;
+        let loss = (objective_float - answer).abs();
+        assert!(loss < 1E-7);
     }
 }
 
