@@ -223,11 +223,11 @@ impl Tableau for LP {
                 return false
             }
         }
-        println!("Starting Tableau: {}", self.matrix());
+//        println!("Starting Tableau: {}", self.matrix());
 
         while self.pivot() {}
 
-        println!("Finished Tableau: {}", self.matrix());
+//        println!("Finished Tableau: {}", self.matrix());
         let solution = self.read_solution();
         print!("Solution: ");
         for val in solution {

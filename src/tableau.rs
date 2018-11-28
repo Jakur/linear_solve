@@ -3,7 +3,7 @@ use num_traits::identities::One;
 use num_rational::Rational64;
 use num_rational::Ratio;
 use nalgebra::DMatrix;
-use num_traits::ops::checked::CheckedAdd;
+use num_traits::ops::checked::{CheckedAdd, CheckedMul};
 
 pub trait Tableau {
     fn matrix(&self) -> &DMatrix<Rational64>;
@@ -30,17 +30,19 @@ pub trait Tableau {
                                                            &row_vec[..]);
                 let mut row = mat.row_mut(other_row);
                 let scaling = Ratio::from_integer(-1) * col_val;
-                row_copy *= scaling;
+//                row_copy *= scaling;
                 for i in 0..row_copy.len() {
-                    let result = row[i].checked_add(&row_copy[i]);
+                    let result = row_copy[i].checked_mul(&scaling)
+                        .and_then(|v| v.checked_add(&row[i]));
                     match result {
                         Some(num) => {row[i] = num},
                         None => {
                             println!("Failed to add {} and {}. Using lossy addition",
                                      row[i], row_copy[i]);
                             let float1 = *row[i].numer() as f64 / *row[i].denom() as f64;
+                            let scaling_float = *scaling.numer() as f64 / *scaling.denom() as f64;
                             let float2 = *row_copy[i].numer() as f64 / *row_copy[i].denom() as f64;
-                            let approx = Ratio::approximate_float(float1 + float2)
+                            let approx = Ratio::approximate_float(scaling_float * float1 + float2)
                                 .expect("Unable to approximate float");
                             row[i] = approx;
                         }
