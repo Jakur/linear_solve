@@ -3,6 +3,7 @@ use num_traits::identities::One;
 use num_rational::Rational64;
 use num_rational::Ratio;
 use nalgebra::DMatrix;
+use num_traits::ops::checked::CheckedAdd;
 
 pub trait Tableau {
     fn matrix(&self) -> &DMatrix<Rational64>;
@@ -30,7 +31,21 @@ pub trait Tableau {
                 let mut row = mat.row_mut(other_row);
                 let scaling = Ratio::from_integer(-1) * col_val;
                 row_copy *= scaling;
-                row += row_copy;
+                for i in 0..row_copy.len() {
+                    let result = row[i].checked_add(&row_copy[i]);
+                    match result {
+                        Some(num) => {row[i] = num},
+                        None => {
+                            println!("Failed to add {} and {}. Using lossy addition",
+                                     row[i], row_copy[i]);
+                            let float1 = *row[i].numer() as f64 / *row[i].denom() as f64;
+                            let float2 = *row_copy[i].numer() as f64 / *row_copy[i].denom() as f64;
+                            let approx = Ratio::approximate_float(float1 + float2)
+                                .expect("Unable to approximate float");
+                            row[i] = approx;
+                        }
+                    }
+                }
             }
         }
     }
@@ -131,7 +146,7 @@ pub trait Tableau {
             None => {} //No a_0 to eliminate
         }
         //Find optimality for the bottom row--the w row
-        println!("Optimizing...");
+//        println!("Optimizing...");
         while self.matrix()[(nrows-1, ncols-1)] < Ratio::zero() {
             //println!("{}", self.matrix());
             let mut best_col = None;
@@ -145,7 +160,7 @@ pub trait Tableau {
                     None => {best_col = Some(col);}
                 }
             }
-            println!("Best col: {:?} w value: {}", best_col, self.matrix()[(nrows-1, ncols-1)]);
+//            println!("Best col: {:?} w value: {}", best_col, self.matrix()[(nrows-1, ncols-1)]);
             match best_col {
                 Some(best_col) => {
                     if self.matrix()[(nrows-1, best_col)] < Ratio::zero() {
