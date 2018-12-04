@@ -37,14 +37,7 @@ pub trait Tableau {
                     match result {
                         Some(num) => {row[i] = num},
                         None => {
-                            println!("Failed to add {} and {}. Using lossy addition",
-                                     row[i], row_copy[i]);
-                            let float1 = *row[i].numer() as f64 / *row[i].denom() as f64;
-                            let scaling_float = *scaling.numer() as f64 / *scaling.denom() as f64;
-                            let float2 = *row_copy[i].numer() as f64 / *row_copy[i].denom() as f64;
-                            let approx = Ratio::approximate_float(scaling_float * float1 + float2)
-                                .expect("Unable to approximate float");
-                            row[i] = approx;
+                            panic!("Overflow of Rational Type!");
                         }
                     }
                 }
