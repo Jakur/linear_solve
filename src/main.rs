@@ -1,7 +1,10 @@
+extern crate num;
 extern crate num_traits;
 extern crate num_rational;
 extern crate nalgebra;
 extern crate rand;
+
+use std::fmt;
 
 use num_traits::identities::Zero;
 use num_traits::identities::One;
@@ -87,9 +90,7 @@ impl Tableau for ParameterLP {
                 for y in lambda.iter() {
                     print!("{} ", y);
                 }
-                println!();
-                print_inequality(&solution);
-                println!();
+                println!("\nResulting Inequality: {}\n", solution.integer_form());
 
                 solutions.push(solution);
 
@@ -301,6 +302,7 @@ struct Inequality {
 }
 
 impl Inequality {
+    ///Creates a formal inequality type from an vector of the form x_1 + x_2 + ... + const ≤ 0
     fn new(mut data: Vec<Rational64>) -> Inequality {
         //Normalize to set the leftmost nonzero x coefficient to 1
         let mut less_or_eq = true;
@@ -326,6 +328,50 @@ impl Inequality {
         Inequality {
             data,
             less_or_eq,
+        }
+    }
+    ///Returns a new equivalent inequality in integer form
+    fn integer_form(&self) -> Inequality {
+        let mut lcm = num::integer::lcm(*self.data[0].denom(), *self.data[1].denom());
+        for i in 2..self.data.len() {
+            lcm = num::integer::lcm(lcm, *self.data[i].denom());
+        }
+        let mut new_vec = Vec::with_capacity(self.data.len());
+        for rat in self.data.iter() {
+            new_vec.push(*rat * lcm);
+        }
+        Inequality {
+            data: new_vec,
+            less_or_eq: self.less_or_eq,
+        }
+    }
+}
+
+impl fmt::Display for Inequality {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let vec = &self.data;
+        let first = vec[0..vec.len() - 1].iter().enumerate()
+            .find(|tup| *tup.1 != Ratio::zero()); //First nonzero x value
+        let symbol = {
+            if self.less_or_eq {
+                "≤"
+            } else {
+                "≥"
+            }
+        };
+        match first {
+            Some((index, val)) => {
+                write!(f, "{}[x{}]", val, index + 1);
+                for i in index + 1..vec.len() - 1 {
+                    if vec[i] != Ratio::zero() {
+                        write!(f, " + {}[x{}]", vec[i], i + 1);
+                    }
+                }
+                write!(f, " {} {}", symbol, vec[vec.len() - 1] * -1)
+            }
+            None => {
+                write!(f, "Trivial solution 0 {} {}", symbol, vec[vec.len() - 1] * -1)
+            }
         }
     }
 }
@@ -358,34 +404,6 @@ impl PolyVec {
     }
     fn index(&self, poly_index: usize, col: usize) -> usize {
         return poly_index * self.poly_len + col
-    }
-}
-
-fn print_inequality(inequality: &Inequality) {
-    let vec = &inequality.data;
-    let first = vec[0..vec.len() - 1].iter().enumerate()
-        .find(|tup| *tup.1 != Ratio::zero()); //First nonzero x value
-    print!("Resulting inequality: ");
-    let symbol = {
-        if inequality.less_or_eq {
-            "≤"
-        } else {
-            "≥"
-        }
-    };
-    match first {
-        Some((index, val)) => {
-            print!("{}[x{}]", val, index + 1);
-            for i in index + 1..vec.len() - 1 {
-                if vec[i] != Ratio::zero() {
-                    print!(" + {}[x{}]", vec[i], i + 1);
-                }
-            }
-            println!(" {} {}", symbol, vec[vec.len() - 1] * -1);
-        }
-        None => {
-            println!("Trivial solution 0 {} {}", symbol, vec[vec.len() - 1] * -1);
-        }
     }
 }
 

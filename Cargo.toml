@@ -6,6 +6,7 @@ authors = ["Justin Kur <JustinK97@hotmail.com>"]
 [dependencies]
 nalgebra = "0.16.0"
 alga = "*"
+num = "0.2.0"
 num-traits = "*"
 num-rational = "0.2"
 ndarray = "0.12.0"
