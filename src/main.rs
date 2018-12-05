@@ -8,7 +8,6 @@ use std::fmt;
 
 use num_traits::identities::Zero;
 use num_traits::identities::One;
-use num_traits::FromPrimitive;
 use num_rational::Rational64;
 use num_rational::Ratio;
 use nalgebra::DMatrix;
@@ -23,7 +22,7 @@ struct ParameterLP {
     matrix: DMatrix<Rational64>,
     lambda_count: usize, //Index of the first slack column, also number of lambda
     fixed_lambda: Vec<Rational64>, //Fixed coefficients of lambda for a single tableaux solution
-    optim_function: PolyVec,
+    optim_function: Vec<Rational64>,
     initial_condition: DMatrix<Rational64>,
     artificial: Vec<bool>,
     x_count: usize,
@@ -66,7 +65,7 @@ impl Tableau for ParameterLP {
             while self.pivot() {}
             let lambda = self.read_solution();
             let mut vec = vec![Ratio::zero(); self.x_count + 1];
-            for (sl_index, slice) in self.optim_function.data
+            for (sl_index, slice) in self.optim_function
                 .chunks(self.x_count + 1).enumerate() {
                 for (var_index, val) in slice.iter().enumerate() {
                     vec[var_index] += *val * lambda[sl_index];
@@ -123,19 +122,17 @@ impl ParameterLP {
         }
         let (matrix, artificial, phase_one) = matrix_init(&init_optim,
                                                           &constraints, &equal_rows);
-
-        let opt = PolyVec::new(optim, fixed_lambda.len() + 1, variables);
         let mut para = ParameterLP {
             matrix: matrix.clone(),
             lambda_count: variables,
             fixed_lambda,
-            optim_function: opt,
+            optim_function: optim,
             initial_condition: matrix,
             artificial,
             x_count,
             rng: rand::thread_rng(),
         };
-        para.update_objective_row(); //Necessary if all fixed_x != 0
+        para.update_objective_row();
         (para, phase_one)
     }
     fn update_objective_row(&mut self) {
@@ -218,17 +215,6 @@ impl LP {
             variables,
         };
         return (lp, phase_flag);
-    }
-    ///Creates a Tableau from a single slice representing a standard LP
-    fn new_from_tabular(n: usize, m: usize, slice: &[i64]) -> LP {
-        //Debug testing array
-        let table = LP {
-            matrix: DMatrix::from_iterator(n, m, slice.iter()
-                .map(|n| Ratio::from_integer(*n))),
-            artificial: Vec::new(),
-            variables: 2,
-        };
-        table
     }
 }
 
@@ -373,37 +359,6 @@ impl fmt::Display for Inequality {
                 write!(f, "Trivial solution 0 {} {}", symbol, vec[vec.len() - 1] * -1)
             }
         }
-    }
-}
-
-struct PolyVec {
-    data: Vec<Rational64>,
-    poly_len: usize, //Number of terms in each polynomial
-    poly_count: usize, //Number of polynomials
-}
-
-impl PolyVec {
-    fn new(data: Vec<Rational64>, poly_len: usize, poly_count: usize) -> PolyVec {
-        PolyVec {
-            data,
-            poly_len,
-            poly_count
-        }
-    }
-    fn operate(&mut self, row: &DMatrix<Rational64>, multipliers: Vec<Rational64>) {
-        for (col, m) in multipliers.into_iter().enumerate() {
-            if m == Ratio::zero() {continue;}
-            let r = row * m;
-            for val in r.iter() {
-               for p_index in 0..self.poly_count {
-                   let index = self.index(p_index, col);
-                   self.data[index] += *val;
-               }
-            }
-        }
-    }
-    fn index(&self, poly_index: usize, col: usize) -> usize {
-        return poly_index * self.poly_len + col
     }
 }
 

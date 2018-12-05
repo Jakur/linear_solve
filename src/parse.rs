@@ -1,4 +1,5 @@
 use super::*;
+use num::FromPrimitive;
 
 #[derive(Debug, PartialEq)]
 pub enum FileFormat {
