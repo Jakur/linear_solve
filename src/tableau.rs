@@ -30,7 +30,6 @@ pub trait Tableau {
                                                            &row_vec[..]);
                 let mut row = mat.row_mut(other_row);
                 let scaling = Ratio::from_integer(-1) * col_val;
-//                row_copy *= scaling;
                 for i in 0..row_copy.len() {
                     let result = row_copy[i].checked_mul(&scaling)
                         .and_then(|v| v.checked_add(&row[i]));
@@ -66,7 +65,6 @@ pub trait Tableau {
     fn choose_var(&self) -> usize {
         let mut best_col = 0;
         let matrix = self.matrix();
-        //println!("Art cols: {:?}", self.artificial_cols());
         for col in 0..matrix.ncols()-2 {
             if matrix[(0, col)] < matrix[(0, best_col)] && !self.artificial_cols()[col] {
                 best_col = col;
@@ -112,11 +110,8 @@ pub trait Tableau {
     fn artificial_solve(&mut self, artificial_cols: Vec<usize>) -> bool {
         let nrows = self.matrix().nrows();
         let ncols = self.matrix().ncols();
-//        println!("nrows: {} ncols: {}", nrows, ncols);
         for col in artificial_cols {
-            //println!("{}", self.matrix());
             let row = col - self.num_variables() + 1; //Todo verify this
-            //println!("Row: {} Col: {}", row, col);
             self.eliminate(row, col);
         }
         //Eliminate a_0, isolating it on the row with the most negative slack
@@ -133,17 +128,14 @@ pub trait Tableau {
                 }
             }
         }
-        //println!("{}", self.matrix());
         match best_row {
             Some(row) => {
                 self.eliminate(row, ncols - 2);
             }
             None => {} //No a_0 to eliminate
         }
-        //Find optimality for the bottom row--the w row
-//        println!("Optimizing...");
+
         while self.matrix()[(nrows-1, ncols-1)] < Ratio::zero() {
-            //println!("{}", self.matrix());
             let mut best_col = None;
             for col in 1..ncols - 1 { //Todo verify correct lower bound
                 match best_col {
@@ -155,12 +147,10 @@ pub trait Tableau {
                     None => {best_col = Some(col);}
                 }
             }
-//            println!("Best col: {:?} w value: {}", best_col, self.matrix()[(nrows-1, ncols-1)]);
             match best_col {
                 Some(best_col) => {
                     if self.matrix()[(nrows-1, best_col)] < Ratio::zero() {
                         let row = self.choose_row(best_col);
-//                        println!("Best row: {:?}", row);
                         if let Some(best_row) = row {
                             self.eliminate(best_row, best_col);
                         } else {
@@ -171,13 +161,6 @@ pub trait Tableau {
                             }
                         }
                     } else { //Todo figure out if this is right
-//                        println!("{}", self.matrix());
-//                        for val in self.matrix().column(best_col).iter() {
-//                            println!("{}", val);
-//                        }
-//                        for val in self.matrix().row(self.matrix().nrows() - 1).iter() {
-//                            println!("{}", val);
-//                        }
                         return false;
                     }
                 }
@@ -190,7 +173,6 @@ pub trait Tableau {
                 }
             }
         }
-        //println!("{}", self.matrix());
         true
     }
     ///Find and return the optimal values of the true variables

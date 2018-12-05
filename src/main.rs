@@ -21,11 +21,11 @@ use tableau::Tableau;
 struct ParameterLP {
     matrix: DMatrix<Rational64>,
     lambda_count: usize, //Index of the first slack column, also number of lambda
-    fixed_lambda: Vec<Rational64>, //Fixed coefficients of lambda for a single tableaux solution
-    optim_function: Vec<Rational64>,
-    initial_condition: DMatrix<Rational64>,
-    artificial: Vec<bool>,
     x_count: usize,
+    fixed_lambda: Vec<Rational64>, //Fixed coefficients of lambda for a single tableaux solution
+    optim_function: Vec<Rational64>, //The optimization function in variable form
+    initial_condition: DMatrix<Rational64>, //Copy of initial condition for future iterations
+    artificial: Vec<bool>, //Vector of booleans indicating whether or not a column is artificial
     rng: rand::ThreadRng,
 }
 
@@ -108,12 +108,8 @@ impl Tableau for ParameterLP {
 impl ParameterLP {
     fn new_standard(x_count: usize, optim: Vec<Rational64>, constraints: Vec<Vec<Rational64>>,
                     equal_rows: Vec<usize>) -> (ParameterLP, bool) {
-        //Fix all x initially to zero
         let variables = constraints[0].len() - 1;
-        let fixed_lambda = vec![Ratio::from_integer(0); variables]; //Todo fix this
-//        let mut fixed_x = vec![Ratio::from((39, 12)); 6];
-//        fixed_x[4] = Ratio::from((9, 2));
-//        fixed_x[5] = Ratio::from((9, 2));
+        let fixed_lambda = vec![Ratio::from_integer(0); variables]; //Dummy values
         let mut counter = x_count;
         let mut init_optim = Vec::new();
         for _ in 0..variables {
@@ -125,11 +121,11 @@ impl ParameterLP {
         let mut para = ParameterLP {
             matrix: matrix.clone(),
             lambda_count: variables,
+            x_count,
             fixed_lambda,
             optim_function: optim,
             initial_condition: matrix,
             artificial,
-            x_count,
             rng: rand::thread_rng(),
         };
         para.update_objective_row();
@@ -184,11 +180,9 @@ impl Tableau for LP {
                 return false
             }
         }
-//        println!("Starting Tableau: {}", self.matrix());
 
         while self.pivot() {}
 
-//        println!("Finished Tableau: {}", self.matrix());
         let solution = self.read_solution();
         print!("Solution: ");
         for val in solution {
