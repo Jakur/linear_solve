@@ -381,7 +381,7 @@ fn print_inequality(inequality: &Inequality) {
                     print!(" + {}[x{}]", vec[i], i + 1);
                 }
             }
-            println!(" ≤ {}", vec[vec.len() - 1] * -1);
+            println!(" {} {}", symbol, vec[vec.len() - 1] * -1);
         }
         None => {
             println!("Trivial solution 0 {} {}", symbol, vec[vec.len() - 1] * -1);
