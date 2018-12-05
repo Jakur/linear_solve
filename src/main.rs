@@ -19,11 +19,11 @@ use tableau::Tableau;
 struct ParameterLP {
     matrix: DMatrix<Rational64>,
     lambda_count: usize, //Index of the first slack column, also number of lambda
-    fixed_x: Vec<Rational64>, //Fixed values of x for a single tableaux solution
+    fixed_lambda: Vec<Rational64>, //Fixed coefficients of lambda for a single tableaux solution
     optim_function: PolyVec,
     initial_condition: DMatrix<Rational64>,
     artificial: Vec<bool>,
-    changing: usize,
+    x_count: usize,
     rng: rand::ThreadRng,
 }
 
@@ -39,16 +39,12 @@ impl Tableau for ParameterLP {
         self.lambda_count
     }
     fn solve(&mut self, phase_one: bool) -> bool {
-        let num_solutions = 20; //Todo compute this, or find other halting condition
+        let num_solutions = 100; //Todo compute this, or find other halting condition
         let mut solutions = Vec::new();
         let mut counter = 0;
         while solutions.len() < num_solutions && counter < 10000 {
             counter += 1;
-            // println!("X: {:?}", self.fixed_x);
-//            let mut print = Vec::new();
             if phase_one {
-//                print.push(format!("Initial Matrix: {}", self.matrix));
-//                print.push("Initiating Phase I to reach a feasible starting point".to_string());
                 let artificial_cols = self.artificial.iter().enumerate()
                     .filter_map(|(index, b)| {
                         if *b {
@@ -57,43 +53,34 @@ impl Tableau for ParameterLP {
                             None
                         }
                     }).collect();
-                if self.artificial_solve(artificial_cols) {
-//                    print.push(format!("Phase I successful beginning Simplex method proper with:\n{}",
-//                             self.matrix));
-                } else {
+                if !self.artificial_solve(artificial_cols) {
                     println!("Unable to find a feasible solution under these X.");
                     self.matrix = self.initial_condition.clone();
-                    self.update_fixed_x();
                     self.update_objective_row();
                     continue;
                 }
             }
             while self.pivot() {}
             let lambda = self.read_solution();
-            let mut vec = vec![Ratio::zero(); self.fixed_x.len() + 1];
+            let mut vec = vec![Ratio::zero(); self.x_count + 1];
             for (sl_index, slice) in self.optim_function.data
-                .chunks(self.fixed_x.len() + 1).enumerate() {
+                .chunks(self.x_count + 1).enumerate() {
                 for (var_index, val) in slice.iter().enumerate() {
                     vec[var_index] += *val * lambda[sl_index];
                 }
             }
-//            print!("X: [");
-//            for x in self.fixed_x.iter() {
-//                print!("{} ", x);
-//            }
-//            println!("]");
-            if !solutions.contains(&vec) {
+            let solution = Inequality::new(vec);
+
+            if !solutions.contains(&solution) {
                 println!("Solution {}, Attempt {}", solutions.len() + 1, counter);
-                print!("X: [");
-                for x in self.fixed_x.iter() {
-                    print!("{} ", x);
+                print!("Fixed λ coefficients: [");
+                for lambda in self.fixed_lambda.iter() {
+                    print!("{} ", lambda);
                 }
                 println!("]");
-//                for line in print {
-//                    println!("{}", line);
-//                }
+
                 print!("Solution vector (in X): ");
-                for x in vec.iter() {
+                for x in solution.data.iter() {
                     print!("{} ", x);
                 }
                 print!("\nSolution vector (in Lambda): ");
@@ -101,26 +88,13 @@ impl Tableau for ParameterLP {
                     print!("{} ", y);
                 }
                 println!();
-                print_inequality(&vec);
+                print_inequality(&solution);
                 println!();
-//                let mut art = Vec::new();
-//                for (index, b) in self.artificial_cols().iter().enumerate() {
-//                    if *b {
-//                        art.push(index);
-//                    }
-//                }
-//                println!("\nArtificial columns: {:?}", art);
-                // println!("{}", self.matrix);
-                solutions.push(vec);
-//                if solutions.len() % 25 == 0 {
-//                    if self.changing >= self.fixed_x.len() {
-//                        return true;
-//                    }
-//                    self.fixed_x = vec![Ratio::zero(); self.fixed_x.len()];
-//                }
+
+                solutions.push(solution);
+
             }
             self.matrix = self.initial_condition.clone();
-            self.update_fixed_x();
             self.update_objective_row();
         }
         println!("Counter: {}", counter);
@@ -136,7 +110,7 @@ impl ParameterLP {
                     equal_rows: Vec<usize>) -> (ParameterLP, bool) {
         //Fix all x initially to zero
         let variables = constraints[0].len() - 1;
-        let fixed_x = vec![Ratio::from_integer(0); x_count]; //Todo fix this
+        let fixed_lambda = vec![Ratio::from_integer(0); variables]; //Todo fix this
 //        let mut fixed_x = vec![Ratio::from((39, 12)); 6];
 //        fixed_x[4] = Ratio::from((9, 2));
 //        fixed_x[5] = Ratio::from((9, 2));
@@ -149,15 +123,15 @@ impl ParameterLP {
         let (matrix, artificial, phase_one) = matrix_init(&init_optim,
                                                           &constraints, &equal_rows);
 
-        let opt = PolyVec::new(optim, fixed_x.len() + 1, variables);
+        let opt = PolyVec::new(optim, fixed_lambda.len() + 1, variables);
         let mut para = ParameterLP {
             matrix: matrix.clone(),
             lambda_count: variables,
-            fixed_x,
+            fixed_lambda,
             optim_function: opt,
             initial_condition: matrix,
             artificial,
-            changing: 0,
+            x_count,
             rng: rand::thread_rng(),
         };
         para.update_objective_row(); //Necessary if all fixed_x != 0
@@ -166,22 +140,11 @@ impl ParameterLP {
     fn update_objective_row(&mut self) {
         let mut col = 0;
         while col < self.lambda_count { //For each x column
-            let mut total = Ratio::zero();
-            let offset = col * (self.fixed_x.len() + 1);
-            for index in 0..self.fixed_x.len() {
-                total += self.optim_function.data[offset+index] * self.fixed_x[index];
-            }
-            total += self.optim_function.data[offset + self.fixed_x.len()]; //Constant term
-            self.matrix_mut()[(0, col)] = total;
-            col += 1;
-        }
-    }
-    fn update_fixed_x(&mut self) {
-        //Todo find heuristic
-        for i in 0..self.fixed_x.len() {
             let a: i64 = self.rng.gen_range(-100, 100);
-            let b: i64 = self.rng.gen_range(1, 100);
-            self.fixed_x[i] = Ratio::from((a, b));
+            let b: i64 = self.rng.gen_range(1, 2);
+            self.matrix_mut()[(0, col)] = Ratio::from((a, b));
+            self.fixed_lambda[col] = Ratio::from((a, b));
+            col += 1;
         }
     }
 }
@@ -331,6 +294,42 @@ fn matrix_init(optim: &Vec<Rational64>, constraints: &Vec<Vec<Rational64>>,
     return (matrix, art, phase_flag);
 }
 
+#[derive(PartialEq)]
+struct Inequality {
+    data: Vec<Rational64>,
+    less_or_eq: bool,
+}
+
+impl Inequality {
+    fn new(mut data: Vec<Rational64>) -> Inequality {
+        //Normalize to set the leftmost nonzero x coefficient to 1
+        let mut less_or_eq = true;
+        let index = {
+            let mut answer = None;
+            for i in 0..data.len() {
+                if data[i] != Ratio::zero() {
+                    answer = Some(i);
+                    break;
+                }
+            }
+            answer
+        };
+        if let Some(num) = index {
+            let norm = data[num];
+            if norm < Ratio::zero() { //Dividing by a negative number, so flip the direction
+                less_or_eq = false;
+            }
+            for i in num..data.len() { //We know all previous must be 0
+                data[i] /= norm;
+            }
+        }
+        Inequality {
+            data,
+            less_or_eq,
+        }
+    }
+}
+
 struct PolyVec {
     data: Vec<Rational64>,
     poly_len: usize, //Number of terms in each polynomial
@@ -362,10 +361,18 @@ impl PolyVec {
     }
 }
 
-fn print_inequality(vec: &Vec<Rational64>) {
+fn print_inequality(inequality: &Inequality) {
+    let vec = &inequality.data;
     let first = vec[0..vec.len() - 1].iter().enumerate()
         .find(|tup| *tup.1 != Ratio::zero()); //First nonzero x value
     print!("Resulting inequality: ");
+    let symbol = {
+        if inequality.less_or_eq {
+            "≤"
+        } else {
+            "≥"
+        }
+    };
     match first {
         Some((index, val)) => {
             print!("{}[x{}]", val, index + 1);
@@ -377,7 +384,7 @@ fn print_inequality(vec: &Vec<Rational64>) {
             println!(" ≤ {}", vec[vec.len() - 1] * -1);
         }
         None => {
-            println!("Trivial solution 0 ≤ {}", vec[vec.len() - 1] * -1);
+            println!("Trivial solution 0 {} {}", symbol, vec[vec.len() - 1] * -1);
         }
     }
 }
